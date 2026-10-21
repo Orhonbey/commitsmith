@@ -31,6 +31,16 @@ describe('cleanMessage', () => {
     assert.equal(cleanMessage(raw, false), raw);
   });
 
+  it('leaves human text alone', () => {
+    const raw = ['fix: x', '', 'Fixtures generated with Gemini for tests', 'AI-free path', 'Co-authored-by: Cursor Lee <cursor.lee@x.com>'].join('\n');
+    assert.equal(cleanMessage(raw, true), raw);
+  });
+
+  it('removes the known AI lines', () => {
+    const raw = 'fix: x\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>';
+    assert.equal(cleanMessage(raw, true), 'fix: x');
+  });
+
   it('collapses 3+ blank lines and trims', () => {
     assert.equal(cleanMessage('\n\n fix: x\n\n\n\n\nbody \n\n', true), 'fix: x\n\nbody');
   });

@@ -1,9 +1,12 @@
-const AI_NAMES = /claude|anthropic|codex|openai|chatgpt|gpt|copilot|gemini|cursor/i;
+const AI_NAME = /\b(claude|anthropic|codex|openai|chatgpt|copilot)\b|^(cursor|gemini)( agent| cli)?$/i;
+const AI_EMAIL = /noreply@anthropic\.com|@openai\.com|@cursor\.com|noreply@google\.com/i;
+const GENERATED = /^[\s\p{Extended_Pictographic}\[\]()*_>-]*generated with\s+\[?(claude|codex|ai)\b/iu;
 
 function isAttributionLine(line: string): boolean {
   const t = line.trim();
-  if (/^co-authored-by\s*:/i.test(t)) return AI_NAMES.test(t);
-  if (/generated with/i.test(t) && (AI_NAMES.test(t) || /\bai\b/i.test(t))) return true;
+  const co = /^co-authored-by\s*:\s*(.*?)\s*(?:<([^>]*)>)?\s*$/i.exec(t);
+  if (co) return AI_NAME.test(co[1]) || AI_EMAIL.test(co[2] ?? '');
+  if (GENERATED.test(t)) return true;
   if (t.startsWith('🤖')) return true;
   return /^[A-Za-z-]*-Session:/i.test(t);
 }
