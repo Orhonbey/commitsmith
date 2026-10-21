@@ -1,7 +1,7 @@
 // Runs inside the VS Code extension host (see runTest.ts).
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import * as vscode from 'vscode';
 
@@ -102,7 +102,7 @@ export async function run(): Promise<void> {
   // ---- Activity Bar panel: the container and view are contributed, the view resolves, the model is live ----
   const contributes = ext.packageJSON.contributes;
   assert.equal(contributes.viewsContainers.activitybar[0].id, 'commitsmith', 'the commitsmith view container is contributed');
-  assert.equal(contributes.views.commitsmith[0].id, 'commitsmith.panel', 'the commitsmith.panel view is contributed');
+  assert.deepEqual(contributes.views.commitsmith.map((v: any) => v.id), ['commitsmith.panel', 'commitsmith.changes', 'commitsmith.recent'], 'the three views are contributed');
   await vscode.commands.executeCommand('workbench.view.extension.commitsmith');
   const panelState = (message?: unknown): Thenable<any> => vscode.commands.executeCommand('commitsmith.test.panel', message ? { message } : {});
   let panel: any;
@@ -115,13 +115,86 @@ export async function run(): Promise<void> {
   assert.equal(panel.model.hasRepo, true);
   assert.equal(panel.model.repo.name, basename(repoPath));
   assert.equal(panel.model.push.kind, 'upstream', 'the push line reads the branch upstream');
-  const kinds = panel.model.recent.map((e: any) => e.kind);
+  const recent: any[] = await vscode.commands.executeCommand('commitsmith.test.recent');
+  const kinds = recent.map((e) => e.kind);
   assert.ok(kinds.includes('committed') && kinds.includes('pushed'), 'Recent lists the commits and the push; got ' + kinds.join(','));
-  assert.ok(panel.model.recent.length <= 5, 'Recent is capped at 5');
+  assert.ok(recent.length <= 5, 'Recent is capped at 5');
   assert.equal(panel.model.busy, false);
   // Forged messages are ignored: an unknown action and a repository that is not open change nothing.
   const forged = await panelState({ type: 'run', action: 'rm -rf' });
   assert.equal(forged.model.repo.selected, panel.model.repo.selected);
   const forged2 = await panelState({ type: 'selectRepo', root: '/not/open' });
   assert.equal(forged2.model.repo.selected, panel.model.repo.selected);
+
+  // ---- Message box: the webview's textarea and the Source Control input box are one value ----
+  const typed = await panelState({ type: 'setMessage', value: 'feat: typed in the panel' });
+  assert.equal(repo.inputBox.value, 'feat: typed in the panel', 'setMessage writes the Source Control input box');
+  assert.equal(typed.model.message, 'feat: typed in the panel');
+  repo.inputBox.value = 'fix: typed in Source Control';
+  assert.equal((await panelState()).model.message, 'fix: typed in Source Control', 'the panel reads the input box back');
+  await panelState({ type: 'setMessage', value: 'x'.repeat(10001) });
+  assert.equal(repo.inputBox.value, 'fix: typed in Source Control', 'an over-long message is dropped');
+  repo.inputBox.value = '';
+
+  // ---- Changes tree: one staged, one modified, one new file ----
+  writeFileSync(join(repoPath, 'b.txt'), 'bee\nstaged\n');
+  gitOut('add', 'b.txt');
+  writeFileSync(join(repoPath, 'c.txt'), 'sea\nmodified\n');
+  writeFileSync(join(repoPath, 'f.txt'), 'fresh\n');
+  type Tree = { group: { id: string; count: number; leftOut?: boolean }; children: any[] }[];
+  const tree = async (): Promise<Tree> => {
+    await repo.status();
+    return vscode.commands.executeCommand('commitsmith.test.changes');
+  };
+  const paths = (t: Tree, id: string) => (t.find((g) => g.group.id === id)?.children ?? []).map((n) => n.item.path);
+  const until = async (ok: (t: Tree) => boolean, what: string) => {
+    let t = await tree();
+    for (let i = 0; i < 50 && !ok(t); i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      t = await tree();
+    }
+    assert.ok(ok(t), what + '; tree: ' + JSON.stringify(t.map((g) => [g.group.id, paths(t, g.group.id)])));
+    return t;
+  };
+  let t = await until((x) => paths(x, 'staged').includes('b.txt') && paths(x, 'changes').includes('c.txt') && paths(x, 'untracked').includes('f.txt'), 'the three groups list their files');
+  assert.deepEqual(t.map((g) => g.group.id), ['staged', 'changes', 'untracked'], 'Staged, Changes, New Files in that order');
+  assert.deepEqual(paths(t, 'staged'), ['b.txt']);
+  assert.deepEqual(paths(t, 'changes'), ['c.txt']);
+  assert.deepEqual(paths(t, 'untracked'), ['f.txt']);
+  assert.equal(t[2].group.leftOut, false, 'with something staged the New Files group carries no left-out note');
+
+  // Stage moves the modified file to Staged, Unstage moves it back.
+  await vscode.commands.executeCommand('commitsmith.stage', t[1].children[0]);
+  t = await until((x) => paths(x, 'staged').includes('c.txt') && !paths(x, 'changes').includes('c.txt'), 'Stage moves c.txt to Staged');
+  await vscode.commands.executeCommand('commitsmith.unstage', t[0].children.find((n: any) => n.item.path === 'c.txt'));
+  t = await until((x) => paths(x, 'changes').includes('c.txt') && !paths(x, 'staged').includes('c.txt'), 'Unstage moves c.txt back to Changes');
+
+  // Discard never runs without confirmation, and a new file never offers it.
+  const win: any = vscode.window;
+  const realWarn = win.showWarningMessage;
+  const asked: any[] = [];
+  win.showWarningMessage = (...args: any[]) => {
+    asked.push(args);
+    return Promise.resolve(undefined); // the user cancels the modal
+  };
+  try {
+    await vscode.commands.executeCommand('commitsmith.discard', t[1].children[0]);
+    assert.equal(asked.length, 1, 'Discard asks first');
+    assert.equal(asked[0][1].modal, true, 'the question is modal');
+    assert.equal(readFileSync(join(repoPath, 'c.txt'), 'utf8').replace(/\r/g, ''), 'sea\nmodified\n', 'cancelling keeps the change');
+    await vscode.commands.executeCommand('commitsmith.discardAll', t[1].group);
+    assert.equal(asked.length, 2, 'Discard all asks first');
+    assert.equal(readFileSync(join(repoPath, 'c.txt'), 'utf8').replace(/\r/g, ''), 'sea\nmodified\n', 'cancelling keeps the change');
+    await vscode.commands.executeCommand('commitsmith.discard', t[2].children[0]);
+    assert.equal(asked.length, 2, 'a new file does not even ask');
+    assert.ok(existsSync(join(repoPath, 'f.txt')), 'the new file is untouched');
+  } finally {
+    win.showWarningMessage = realWarn;
+  }
+  assert.ok(Array.isArray(await vscode.commands.executeCommand('commitsmith.test.recent')));
+  // A forged node is ignored.
+  await vscode.commands.executeCommand('commitsmith.stage', { type: 'file', root: '/not/open', item: { path: 'c.txt' } });
+  await vscode.commands.executeCommand('commitsmith.stage', { type: 'file', root: repoPath, item: { path: '../escape.txt' } });
+  t = await tree();
+  assert.deepEqual(paths(t, 'staged'), ['b.txt'], 'forged stage requests change nothing');
 }

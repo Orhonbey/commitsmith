@@ -24,20 +24,20 @@ function input(o: Partial<PanelInput> = {}): PanelInput {
     includeUntracked: false,
     push: push(),
     busy: false,
-    recent: [],
+    message: '',
     ...o,
   };
 }
 
 describe('panel model', () => {
-  it('staged files win: staged chip is active', () => {
+  it('staged files win: the scope is staged', () => {
     const m = buildPanelModel(input({ status: [staged('a'), unstaged('b'), unstaged('c')] }));
     assert.equal(m.scope.staged, 1);
     assert.equal(m.scope.all, 2);
     assert.equal(m.scope.active, 'staged');
   });
 
-  it('nothing staged: the all chip is active', () => {
+  it('nothing staged: the scope is all changes', () => {
     const m = buildPanelModel(input({ status: [unstaged('b'), unstaged('c')] }));
     assert.equal(m.scope.staged, 0);
     assert.equal(m.scope.all, 2);
@@ -50,20 +50,9 @@ describe('panel model', () => {
     assert.equal(buildPanelModel(input({ status, includeUntracked: true })).scope.all, 3);
   });
 
-  it('new files line: counts left-out untracked files, none when they are included', () => {
-    const status = [unstaged('b'), fresh('n1'), fresh('n2')];
-    assert.equal(buildPanelModel(input({ status })).scope.leftOut, 2);
-    assert.equal(buildPanelModel(input({ status, includeUntracked: true })).scope.leftOut, 0);
-  });
-
-  it('new files stay left out when staged files win, even with includeUntracked', () => {
-    const status = [staged('a'), fresh('n1')];
-    assert.equal(buildPanelModel(input({ status, includeUntracked: true })).scope.leftOut, 1);
-  });
-
-  it('a clean tree has empty chips and no line', () => {
+  it('a clean tree has an empty scope', () => {
     const m = buildPanelModel(input());
-    assert.deepEqual(m.scope, { staged: 0, all: 0, active: 'all', leftOut: 0 });
+    assert.deepEqual(m.scope, { staged: 0, all: 0, active: 'all' });
   });
 
   it('one repository: shown as a name, no choice', () => {
@@ -94,11 +83,11 @@ describe('panel model', () => {
   });
 
   it('push line: upstream with commits to push', () => {
-    assert.deepEqual(buildPanelModel(input()).push, { kind: 'upstream', upstream: 'origin/main', ahead: 2 });
+    assert.deepEqual(buildPanelModel(input()).push, { kind: 'upstream', branch: 'main', upstream: 'origin/main', ahead: 2 });
   });
 
   it('push line: no upstream but a remote', () => {
-    assert.deepEqual(buildPanelModel(input({ push: push({ upstream: undefined, ahead: 3 }) })).push, { kind: 'noUpstream', ahead: 3 });
+    assert.deepEqual(buildPanelModel(input({ push: push({ upstream: undefined, ahead: 3 }) })).push, { kind: 'noUpstream', branch: 'main', ahead: 3 });
   });
 
   it('push line: no remote, unborn and detached use the Push command states', () => {
@@ -123,7 +112,17 @@ describe('panel model', () => {
     assert.equal(RECENT_MAX, 5);
     assert.equal(list.length, 5);
     assert.deepEqual(list.map((e) => (e as { branch: string }).branch), ['b7', 'b6', 'b5', 'b4', 'b3']);
-    assert.equal(buildPanelModel(input({ recent: list })).recent.length, 5);
+  });
+
+  it('the commit message of the repository is passed through', () => {
+    assert.equal(buildPanelModel(input({ message: 'feat: x' })).message, 'feat: x');
+    assert.equal(buildPanelModel(input()).message, '');
+  });
+
+  it('the model no longer carries the recent list or the new-files line', () => {
+    const m = buildPanelModel(input()) as unknown as Record<string, unknown>;
+    assert.equal('recent' in m, false);
+    assert.equal('leftOut' in (m.scope as object), false);
   });
 
   it('addRecent does not mutate its input', () => {
