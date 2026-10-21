@@ -118,7 +118,7 @@ describe('diffCollector', () => {
     repo.write('[a].txt', 'X-CHANGED\n');
     const [d] = await collectDiff(repo.root, manual('all', ['[a].txt']), DEFAULT_DIFF_OPTIONS);
     assert.ok(d.patch!.includes('+X-CHANGED'));
-    assert.ok(!d.patch!.includes('A-CHANGED'), d.patch);
+    assert.ok(!d.patch!.includes('A-CHANGED'), d.patch ?? '');
   });
 
   it('untracked text and binary files', async () => {

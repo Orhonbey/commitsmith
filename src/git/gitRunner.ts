@@ -15,7 +15,10 @@ export interface RunGitOptions {
   input?: string | Buffer;
   env?: NodeJS.ProcessEnv;
   allowFail?: boolean;
-  /** Read-only command: GIT_OPTIONAL_LOCKS=0, so it never takes index.lock to refresh the index. */
+  /**
+   * Read-only command: GIT_OPTIONAL_LOCKS=0, so it never takes index.lock to refresh the index, and
+   * LC_ALL=C for stable output. Other commands (commit runs the user's hooks) keep the user's env.
+   */
   readOnly?: boolean;
 }
 
@@ -29,8 +32,9 @@ const MAX_BUFFER = 64 * 1024 * 1024;
 
 export function runGit(cwd: string, args: string[], opts: RunGitOptions = {}): Promise<RunGitResult> {
   const fullArgs = ['-c', 'core.quotePath=false', ...args];
-  const env: NodeJS.ProcessEnv = { ...process.env, ...opts.env, GIT_LITERAL_PATHSPECS: '1', LC_ALL: 'C' };
-  if (opts.readOnly) env.GIT_OPTIONAL_LOCKS = '0';
+  // No GIT_LITERAL_PATHSPECS here: it would leak into hooks. Our own pathspecs use `literal()`.
+  const env: NodeJS.ProcessEnv = { ...process.env, ...opts.env };
+  if (opts.readOnly) Object.assign(env, { GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C' });
   // An explicit `undefined` in opts.env removes the inherited variable.
   for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
   return new Promise((resolve, reject) => {
@@ -74,7 +78,15 @@ export function runGit(cwd: string, args: string[], opts: RunGitOptions = {}): P
   });
 }
 
-/** NUL-joined path list for `--pathspec-from-file=- --pathspec-file-nul`. */
+/** A path as a pathspec that matches only itself (no glob or other pathspec magic). */
+export const literal = (path: string): string => `:(literal)${path}`;
+
+/** NUL-joined literal pathspecs for `--pathspec-from-file=- --pathspec-file-nul`. */
 export function pathspecInput(paths: string[]): string {
+  return paths.map((p) => literal(p) + '\0').join('');
+}
+
+/** NUL-joined plain paths, for commands that read paths rather than pathspecs (`update-index -z --stdin`). */
+export function pathListInput(paths: string[]): string {
   return paths.map((p) => p + '\0').join('');
 }

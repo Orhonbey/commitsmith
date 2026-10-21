@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { copyFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { GitError, pathspecInput, runGit } from './gitRunner';
+import { GitError, pathListInput, pathspecInput, runGit } from './gitRunner';
 import type { Scope } from './scope';
 
 export type CommitGroup = { message: string; paths: string[] };
@@ -137,7 +137,7 @@ export async function commitGroups(
         if (gone.length > 0) {
           await runGit(root, ['update-index', '-z', '--force-remove', '--stdin'], {
             env,
-            input: pathspecInput(gone),
+            input: pathListInput(gone),
           });
         }
       } else {

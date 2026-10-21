@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { open, readFile, stat } from 'node:fs/promises';
 import { extname, join } from 'node:path';
-import { runGit } from './gitRunner';
+import { literal, runGit } from './gitRunner';
 import type { Scope, ScopedFile } from './scope';
 
 export type DiffOptions = {
@@ -184,7 +184,7 @@ export async function collectDiff(root: string, scope: Scope, opts: DiffOptions)
   const worker = async () => {
     while (next < toFetch.length) {
       const d = toFetch[next++];
-      const paths = d.origPath ? [d.origPath, d.path] : [d.path];
+      const paths = (d.origPath ? [d.origPath, d.path] : [d.path]).map(literal);
       try {
         d.patch = (await runGit(root, [...diffArgs(['-p']), '--', ...paths], { readOnly: true })).stdout;
       } catch {

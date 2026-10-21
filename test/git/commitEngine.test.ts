@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, readdirSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, it } from 'mocha';
 import { commitGroups, refreshIndex, seedTempIndex } from '../../src/git/commitEngine';
@@ -245,6 +245,31 @@ describe('commitEngine', () => {
     const files = await headFiles();
     assert.ok(files.includes('Ödeme ü.cs'));
     assert.ok(files.includes('Oswald-Medium SDF.asset'));
+  });
+
+  it("the user's hooks get git's normal pathspec rules and locale", async () => {
+    repo.write(
+      '.git/hooks/pre-commit',
+      '#!/bin/sh\ngit diff --cached --name-only -- "*.txt" > "$(git rev-parse --absolute-git-dir)/hook-glob"\n' +
+        'echo "[$LC_ALL][$GIT_LITERAL_PATHSPECS]" > "$(git rev-parse --absolute-git-dir)/hook-env"\nexit 0\n',
+    );
+    chmodSync(join(repo.root, '.git', 'hooks', 'pre-commit'), 0o755);
+    repo.write('a.txt', 'a2\n');
+    const res = await commitGroups(repo.root, 'all', [{ message: 'm', paths: ['a.txt'] }]);
+    assert.equal(res.failed, undefined, res.failed?.error ?? '');
+    assert.equal(readFileSync(join(repo.root, '.git', 'hook-glob'), 'utf8').trim(), 'a.txt', 'a glob pathspec in a hook matches');
+    assert.equal(readFileSync(join(repo.root, '.git', 'hook-env'), 'utf8').trim(), `[${process.env.LC_ALL ?? ''}][]`);
+  });
+
+  it('paths with pathspec magic characters are taken literally', async () => {
+    repo.write('[a].txt', 'x\n');
+    repo.write('a.txt', 'a2\n');
+    const res = await commitGroups(repo.root, 'all', [{ message: 'm', paths: ['[a].txt'] }]);
+    assert.equal(res.failed, undefined, res.failed?.error ?? '');
+    const files = await headFiles();
+    assert.ok(files.includes('[a].txt'), files.join());
+    assert.equal((await repo.git('show', 'HEAD:a.txt')).trim(), 'a', 'a.txt was not matched by [a].txt');
+    assert.equal((await repo.git('status', '--porcelain')).trim(), 'M a.txt');
   });
 
   it('600 files in one group', async () => {
