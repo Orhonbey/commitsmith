@@ -9,8 +9,8 @@ import { cleanMessage } from '../message/clean';
 import { buildMessagePrompt } from '../prompt/prompts';
 import { PlanError } from '../split/plan';
 import { readRepoContext } from '../prompt/repoContext';
-import { decidePush, readPushInfo, runPush } from '../push/push';
 import { GitRepository, getRepository } from './gitApi';
+import { pushFlow } from './pushFlow';
 import { SplitHost, SplitSession } from './splitSession';
 import { makePlan } from './splitPlanner';
 import { ToolPicker } from './statusBar';
@@ -247,45 +247,8 @@ export class CommitSmithCommands implements vscode.Disposable, SplitHost {
   push = (arg?: unknown) => this.withRepo(arg, (root, repo) => this.pushFlow(root, repo));
 
   /** Push with its confirmations; shared by the Push command and Smart split's "Push when done". */
-  async pushFlow(root: string, repo: GitRepository): Promise<void> {
-    const info = await readPushInfo(root);
-    const d = decidePush(info);
-    if (d.kind === 'noRemote') {
-      void vscode.window.showErrorMessage(vscode.l10n.t('This repository has no remote to push to'));
-      return;
-    }
-    if (d.kind === 'nothing') {
-      void vscode.window.showInformationMessage(
-        info.branch
-          ? vscode.l10n.t('Nothing to push')
-          : info.unborn
-            ? vscode.l10n.t('Nothing to push yet. Make a first commit')
-            : vscode.l10n.t('Not on a branch'),
-      );
-      return;
-    }
-    const go = vscode.l10n.t('Push');
-    if (d.kind === 'setUpstream') {
-      const ok = await vscode.window.showInformationMessage(
-        vscode.l10n.t('Publish branch {0} to {1}?', info.branch, d.remote),
-        { modal: true },
-        go,
-      );
-      if (ok !== go) return;
-    } else if (d.confirmDefault) {
-      const ok = await vscode.window.showWarningMessage(
-        vscode.l10n.t('Push {0} commits to {1}?', info.ahead, info.upstream ?? info.branch),
-        { modal: true },
-        go,
-      );
-      if (ok !== go) return;
-    }
-    await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: vscode.l10n.t('Pushing...') },
-      () => runPush(root, d, info.branch),
-    );
-    await repo.status();
-    void vscode.window.showInformationMessage(vscode.l10n.t('Pushed {0}', info.branch));
+  pushFlow(root: string, repo: GitRepository): Promise<void> {
+    return pushFlow(root, repo, this.log);
   }
 
   pickModel = (): Promise<void> => this.picker.pick();

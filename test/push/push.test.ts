@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, it } from 'mocha';
-import { decidePush, readPushInfo, runPush, type PushInfo } from '../../src/push/push';
+import { decidePush, readPushInfo, type PushInfo } from '../../src/push/push';
 import { runGit } from '../../src/git/gitRunner';
 import { createTempRepo, type TempRepo } from '../helpers/tempRepo';
 
@@ -129,25 +129,6 @@ describe('push', () => {
     }
   });
 
-  it('runPush setUpstream pushes and sets @{u}', async () => {
-    await repo.git('remote', 'add', 'origin', bare);
-    await runPush(repo.root, { kind: 'setUpstream', remote: 'origin' }, 'main');
-    const u = (await repo.git('rev-parse', '--abbrev-ref', '@{u}')).trim();
-    assert.equal(u, 'origin/main');
-    const remoteHead = (await runGit(bare, ['rev-parse', 'main'])).stdout.trim();
-    assert.equal(remoteHead, (await repo.git('rev-parse', 'HEAD')).trim());
-  });
-
-  it('runPush push sends new commits and throws GitError on failure', async () => {
-    await withOrigin();
-    await commit('b.txt');
-    await runPush(repo.root, { kind: 'push' }, 'main');
-    assert.equal((await readPushInfo(repo.root)).ahead, 0);
-    await repo.git('remote', 'set-url', 'origin', join(bare, 'missing'));
-    await commit('c.txt');
-    await assert.rejects(runPush(repo.root, { kind: 'push' }, 'main'), { name: 'GitError' });
-  });
-
   it('new branch with no commits ahead and no upstream -> setUpstream', async () => {
     await withOrigin();
     await repo.git('checkout', '-b', 'fresh');
@@ -155,27 +136,6 @@ describe('push', () => {
     assert.equal(i.upstream, undefined);
     assert.equal(i.ahead, 0);
     assert.deepEqual(decidePush(i), { kind: 'setUpstream', remote: 'origin' });
-  });
-
-  it('non-fast-forward rejection throws GitError mentioning the rejection', async () => {
-    await withOrigin();
-    const other = await createTempRepo();
-    try {
-      await other.git('remote', 'add', 'origin', bare);
-      await other.git('pull', 'origin', 'main');
-      other.write('x.txt', 'x\n');
-      await other.git('add', '-A');
-      await other.git('commit', '-m', 'x');
-      await other.git('push', 'origin', 'main');
-    } finally {
-      await other.cleanup();
-    }
-    await commit('b.txt');
-    await assert.rejects(runPush(repo.root, { kind: 'push' }, 'main'), (e: Error & { stderr?: string }) => {
-      assert.equal(e.name, 'GitError');
-      assert.match(e.stderr ?? '', /rejected|non-fast-forward|fetch first/);
-      return true;
-    });
   });
 
   it('default branch with a slash comes from origin/HEAD', async () => {

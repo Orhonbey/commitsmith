@@ -68,5 +68,6 @@
   "Regrouping...": "Yeniden gruplanıyor...",
   "CommitSmith: {0} was not found": "CommitSmith: {0} bulunamadı",
   "CommitSmith: {0} has no models": "CommitSmith: {0} için model yok",
-  "{0} has no models. Add some in commitsmith.models.{1}": "{0} için model bulunamadı. commitsmith.models.{1} ayarına ekle"
+  "{0} has no models. Add some in commitsmith.models.{1}": "{0} için model bulunamadı. commitsmith.models.{1} ayarına ekle",
+  "Push failed: {0}": "Push başarısız oldu: {0}"
 }

@@ -62,12 +62,3 @@ export function decidePush(info: PushInfo): PushDecision {
   const target = remote ? info.upstream.slice(remote.length + 1) : info.branch;
   return { kind: 'push', confirmDefault: target === info.defaultBranch };
 }
-
-export async function runPush(
-  root: string,
-  d: { kind: 'push' } | { kind: 'setUpstream'; remote: string },
-  branch: string,
-): Promise<void> {
-  const args = d.kind === 'push' ? ['push'] : ['push', '-u', d.remote, branch];
-  await runGit(root, args, { env: { GIT_TERMINAL_PROMPT: '0' } });
-}

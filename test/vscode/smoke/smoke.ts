@@ -14,7 +14,7 @@ const COMMANDS = [
 ];
 
 export async function run(): Promise<void> {
-  const ext = vscode.extensions.getExtension('orhonbey.commitsmith');
+  const ext = vscode.extensions.getExtension('commitsmith.commitsmith');
   assert.ok(ext, 'extension is installed; dev extensions: ' + vscode.extensions.all.filter((e) => !e.id.startsWith('vscode.')).map((e) => e.id).join(','));
   await ext.activate();
   assert.ok(ext.isActive, 'extension activates');
@@ -85,4 +85,18 @@ export async function run(): Promise<void> {
   await vscode.commands.executeCommand('commitsmith.test.planTab', { action: 'message', message: { type: 'cancel' } });
   for (let i = 0; i < 40 && labels().includes('✦ Commit plan'); i++) await new Promise((r) => setTimeout(r, 100));
   assert.ok(!labels().includes('✦ Commit plan'), 'Cancel closes the plan tab');
+
+  // ---- Push goes through the git extension (repo.push), to a non-default branch: no confirmation ----
+  const bare = join(repoPath, '..', 'remote.git');
+  execFileSync('git', ['init', '--bare', '-b', 'main', bare]);
+  gitOut('remote', 'add', 'origin', bare);
+  gitOut('checkout', '-q', '-b', 'topic');
+  gitOut('push', '-q', '-u', 'origin', 'topic');
+  writeFileSync(join(repoPath, 'e.txt'), 'e\n');
+  gitOut('add', 'e.txt');
+  gitOut('commit', '-q', '-m', 'feat: e');
+  for (let i = 0; i < 40 && repo.state.HEAD?.name !== 'topic'; i++) await new Promise((r) => setTimeout(r, 100));
+  await vscode.commands.executeCommand('commitsmith.push');
+  const remoteTopic = execFileSync('git', ['-C', bare, 'rev-parse', 'topic']).toString().trim();
+  assert.equal(remoteTopic, gitOut('rev-parse', 'HEAD'), 'commitsmith.push pushed the new commit');
 }
