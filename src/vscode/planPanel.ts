@@ -7,7 +7,7 @@ import type { SplitPlan } from '../split/plan';
 export type ToWebview =
   | { type: 'plan'; plan: SplitPlan; toolLabel: string; fileCount: number; branch: string; newFiles: string[]; stale: boolean; used: boolean; revision: number; strings: Record<string, string> }
   | { type: 'busy'; text: string }
-  | { type: 'result'; result: CommitResult }
+  | { type: 'result'; result: CommitResult; failedText?: string }
   | { type: 'error'; text: string };
 
 /** Every string the webview shows, localized here so media/plan.js holds no literals. */

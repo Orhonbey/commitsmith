@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import { commitGroups } from '../git/commitEngine';
+import { CommitResult, commitGroups } from '../git/commitEngine';
+import { commitFailureText } from './commitFeedback';
 import { readStatus } from '../git/status';
 import type { PlanLocks } from '../prompt/prompts';
 import { toCommitGroups } from '../split/plan';
@@ -16,6 +17,9 @@ export interface SplitHost extends PlannerEnv {
   /** Shows the error to the user; `onText` receives the localized text first. Cancellation shows nothing. */
   report(e: unknown, onText?: (text: string) => void): Promise<void>;
   pushFlow(root: string, repo: GitRepository): Promise<void>;
+  /** After a commit whose index refresh failed: offers to retry it (modal). */
+  refreshAfterCommit(root: string, repo: GitRepository, result: CommitResult): Promise<void>;
+  logLine(text: string): void;
 }
 
 /** One open "Commit plan" tab: its state, the AI regroup, the commit run and the SCM badges. */
@@ -149,7 +153,11 @@ export class SplitSession implements vscode.Disposable {
       await this.repo.status();
       this.state = { ...this.state, used: true };
       ok = !result.failed;
-      this.panel.post({ type: 'result', result });
+      const f = result.failed;
+      if (f) this.host.logLine(f.error);
+      // The tab shows the same localized texts as Write + Commit; git's raw output is in the log.
+      this.panel.post({ type: 'result', result, failedText: f ? commitFailureText(f, result.done) ?? '' : undefined });
+      if (f?.committed) await this.host.refreshAfterCommit(this.root, this.repo, result);
     });
     if (ok && pushAfter && !this.disposed) await this.host.guard(this.root, () => this.host.pushFlow(this.root, this.repo));
   }

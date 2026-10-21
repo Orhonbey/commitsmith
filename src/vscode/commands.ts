@@ -1,14 +1,15 @@
 import * as vscode from 'vscode';
 import { AiError } from '../ai/types';
 import { DEFAULT_DIFF_OPTIONS, DiffOptions, collectDiff } from '../git/diffCollector';
-import { commitGroups } from '../git/commitEngine';
+import { CommitResult, commitGroups } from '../git/commitEngine';
 import { GitError, pathspecInput, runGit } from '../git/gitRunner';
-import { resolveScope, Scope } from '../git/scope';
+import { resolveScope, Scope, scopeAction } from '../git/scope';
 import { readStatus } from '../git/status';
 import { cleanMessage } from '../message/clean';
 import { buildMessagePrompt } from '../prompt/prompts';
 import { PlanError } from '../split/plan';
 import { readRepoContext } from '../prompt/repoContext';
+import { commitFailureText, offerIndexRefresh } from './commitFeedback';
 import { GitRepository, getRepository } from './gitApi';
 import { pushFlow } from './pushFlow';
 import { SplitHost, SplitSession } from './splitSession';
@@ -122,7 +123,7 @@ export class CommitSmithCommands implements vscode.Disposable, SplitHost {
   }
 
   /** Scope -> diff -> prompt -> AI -> cleaned message. Never touches the index. */
-  private async generate(root: string): Promise<{ message: string; scope: Scope } | undefined> {
+  private async generate(root: string, repo: GitRepository, arg: unknown): Promise<{ message: string; scope: Scope } | undefined> {
     await this.picker.whenReady();
     const cur = this.picker.current();
     if (!cur) {
@@ -131,8 +132,11 @@ export class CommitSmithCommands implements vscode.Disposable, SplitHost {
     }
     const cfg = this.cfg();
     const scope = resolveScope(await readStatus(root), { includeUntracked: cfg.get<boolean>('includeUntracked', false) });
-    if (scope.files.length === 0) {
-      void vscode.window.showInformationMessage(vscode.l10n.t('Nothing to describe'));
+    const action = scopeAction(scope);
+    if (action !== 'describe') {
+      // Only new files changed: offer them (Stage them / Smart split) rather than "nothing to describe".
+      if (action === 'offerNewFiles') void this.offerLeftOut(root, repo, scope.leftOutUntracked, arg);
+      else void vscode.window.showInformationMessage(vscode.l10n.t('Nothing to describe'));
       return undefined;
     }
     const diffs = await collectDiff(root, scope, this.diffOptions());
@@ -164,13 +168,13 @@ export class CommitSmithCommands implements vscode.Disposable, SplitHost {
 
   writeMessage = (arg?: unknown) =>
     this.withRepo(arg, async (root, repo) => {
-      const out = await this.generate(root);
+      const out = await this.generate(root, repo, arg);
       if (out) repo.inputBox.value = out.message;
     });
 
   writeAndCommit = (arg?: unknown) =>
     this.withRepo(arg, async (root, repo) => {
-      const out = await this.generate(root);
+      const out = await this.generate(root, repo, arg);
       if (!out) return;
       const paths = [...new Set(out.scope.files.flatMap((f) => (f.origPath ? [f.path, f.origPath] : [f.path])))];
       const result = await commitGroups(root, out.scope.kind, [{ message: out.message, paths }]);
@@ -178,20 +182,13 @@ export class CommitSmithCommands implements vscode.Disposable, SplitHost {
       if (result.failed) {
         const f = result.failed;
         this.log.appendLine(f.error);
-        if (f.committed) {
-          const sha = result.done[result.done.length - 1]?.sha.slice(0, 7) ?? '';
-          void vscode.window.showWarningMessage(
-            vscode.l10n.t('Committed {0}, but refreshing the index failed. The log has details', sha),
-          );
-        } else if (f.code === 'inProgress') {
-          void vscode.window.showErrorMessage(
-            vscode.l10n.t('A merge, cherry-pick, revert or rebase is in progress. Finish it first'),
-          );
-        } else if (f.code === 'emptyGroup') {
-          void vscode.window.showErrorMessage(vscode.l10n.t('There are no files to commit'));
-        } else if (f.code !== 'cancelled') {
-          await this.fail(vscode.l10n.t('Commit failed. The log has details'), '');
-        }
+        if (f.committed) return this.refreshAfterCommit(root, repo, result);
+        // Nothing was committed: keep the message so a retry does not cost another AI run.
+        repo.inputBox.value = out.message;
+        const text = commitFailureText(f, result.done);
+        if (!text) return;
+        if (f.code === 'inProgress' || f.code === 'emptyGroup') void vscode.window.showErrorMessage(text);
+        else await this.fail(text, '');
         return;
       }
       void vscode.window.showInformationMessage(vscode.l10n.t('Committed {0}', result.done[0].sha.slice(0, 7)));
@@ -207,12 +204,11 @@ export class CommitSmithCommands implements vscode.Disposable, SplitHost {
       split,
     );
     if (choice === stage) {
-      try {
+      // Staging writes the index: it takes the same per-repository lock as the other jobs.
+      await this.guard(root, async () => {
         await runGit(root, ['add', '--pathspec-from-file=-', '--pathspec-file-nul'], { input: pathspecInput(paths) });
         await repo.status();
-      } catch (e) {
-        await this.report(e);
-      }
+      });
     } else if (choice === split) {
       await this.smartSplit(arg);
     }
@@ -245,6 +241,15 @@ export class CommitSmithCommands implements vscode.Disposable, SplitHost {
   }
 
   push = (arg?: unknown) => this.withRepo(arg, (root, repo) => this.pushFlow(root, repo));
+
+  /** The commit landed but the index refresh failed: modal warning with a "Retry index refresh" action. */
+  refreshAfterCommit(root: string, repo: GitRepository, result: CommitResult): Promise<void> {
+    return offerIndexRefresh(root, repo, result, this.log);
+  }
+
+  logLine(text: string): void {
+    this.log.appendLine(text);
+  }
 
   /** Push with its confirmations; shared by the Push command and Smart split's "Push when done". */
   pushFlow(root: string, repo: GitRepository): Promise<void> {

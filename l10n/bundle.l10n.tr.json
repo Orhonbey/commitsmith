@@ -69,5 +69,8 @@
   "CommitSmith: {0} was not found": "CommitSmith: {0} bulunamadı",
   "CommitSmith: {0} has no models": "CommitSmith: {0} için model yok",
   "{0} has no models. Add some in commitsmith.models.{1}": "{0} için model bulunamadı. commitsmith.models.{1} ayarına ekle",
-  "Push failed: {0}": "Push başarısız oldu: {0}"
+  "Push failed: {0}": "Push başarısız oldu: {0}",
+  "Retry index refresh": "Index yenilemeyi tekrar dene",
+  "Until the index is refreshed, the committed files show as staged changes that would undo the commit.": "Index yenilenene kadar commit edilen dosyalar, commit'i geri alacak stage edilmiş değişiklikler olarak görünür.",
+  "Index refreshed": "Index yenilendi"
 }

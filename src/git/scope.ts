@@ -55,3 +55,12 @@ export function resolveScope(status: FileStatus[], opts: { includeUntracked: boo
   }
   return { kind: 'all', files, leftOutUntracked: leftOut };
 }
+
+/**
+ * What Write message / Write + Commit do with a scope: describe it, offer the new files that were
+ * left out (Stage them / Smart split) when they are the only changes, or report nothing to do.
+ */
+export function scopeAction(scope: Scope): 'describe' | 'offerNewFiles' | 'nothing' {
+  if (scope.files.length > 0) return 'describe';
+  return scope.leftOutUntracked.length > 0 ? 'offerNewFiles' : 'nothing';
+}

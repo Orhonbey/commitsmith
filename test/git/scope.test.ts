@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'mocha';
 import { readStatus } from '../../src/git/status';
-import { resolveScope } from '../../src/git/scope';
+import { resolveScope, scopeAction } from '../../src/git/scope';
 import { createTempRepo, type TempRepo } from '../helpers/tempRepo';
 
 describe('resolveScope', () => {
@@ -75,5 +75,14 @@ describe('resolveScope', () => {
     } finally {
       await r.cleanup();
     }
+  });
+  it('only new files: Write message offers them instead of "nothing to describe" (I4)', async () => {
+    repo.write('n.txt', 'n\n');
+    const scope = resolveScope(await readStatus(repo.root), { includeUntracked: false });
+    assert.equal(scopeAction(scope), 'offerNewFiles');
+    assert.equal(scopeAction(resolveScope(await readStatus(repo.root), { includeUntracked: true })), 'describe');
+    repo.write('a.txt', 'a2\n');
+    assert.equal(scopeAction(resolveScope(await readStatus(repo.root), { includeUntracked: false })), 'describe');
+    assert.equal(scopeAction({ kind: 'all', files: [], leftOutUntracked: [] }), 'nothing');
   });
 });
