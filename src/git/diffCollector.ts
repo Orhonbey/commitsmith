@@ -32,6 +32,9 @@ export type FileDiff = {
   summarized: boolean;
 };
 
+const DIFF_FLAGS = ['--no-color', '--no-ext-diff', '--no-textconv', '--src-prefix=a/', '--dst-prefix=b/', '-M'];
+const FETCH_PARALLELISM = 8;
+
 type Numstat = { added: number; removed: number; binary: boolean };
 
 async function emptyTreeSha(root: string): Promise<string> {
@@ -64,19 +67,6 @@ function parseNumstat(out: string): Map<string, Numstat> {
     map.set(path, { binary, added: binary ? 0 : Number(m[1]), removed: binary ? 0 : Number(m[2]) });
   }
   return map;
-}
-
-/** Splits a multi-file patch on `diff --git` headers. */
-function splitPatch(out: string): { header: string; text: string }[] {
-  const chunks: { header: string; text: string }[] = [];
-  const starts: number[] = [];
-  const re = /^diff --git /gm;
-  for (let m = re.exec(out); m; m = re.exec(out)) starts.push(m.index);
-  starts.forEach((s, i) => {
-    const text = out.slice(s, starts[i + 1] ?? out.length);
-    chunks.push({ header: text.slice('diff --git '.length, text.indexOf('\n')), text });
-  });
-  return chunks;
 }
 
 function looksBinary(buf: Buffer): boolean {
@@ -112,22 +102,19 @@ export async function collectDiff(root: string, scope: Scope, opts: DiffOptions)
   const tracked = scope.files.filter((f) => !isUntracked(f));
 
   const numstat = new Map<string, Numstat>();
-  const patches = new Map<string, string>();
+  let base: string[] = [];
   if (tracked.length > 0) {
-    // `git diff` has no --pathspec-from-file; the scope already covers every staged/changed file,
-    // so diff the whole index/worktree (no file list on the command line) and pick scoped files out.
-    const base = await diffBase(root, scope.kind);
-    const common = ['--no-color', '--no-ext-diff', '-M'];
-    const ns = await runGit(root, [...base, ...common, '--numstat', '-z']);
+    base = await diffBase(root, scope.kind);
+    const ns = await runGit(root, [...base, ...DIFF_FLAGS, '--numstat', '-z']);
     for (const [k, v] of parseNumstat(ns.stdout)) numstat.set(k, v);
-    const pt = await runGit(root, [...base, ...common]);
-    for (const chunk of splitPatch(pt.stdout)) patches.set(chunk.header, chunk.text);
   }
+  const summaryExt = new Set(opts.summaryOnlyExtensions.map((e) => e.toLowerCase()));
+  const toFetch: FileDiff[] = [];
 
   const out: FileDiff[] = [];
   for (const f of scope.files) {
     const sizeBytes = await sizeOf(root, f.path, f.change);
-    const base = { path: f.path, origPath: f.origPath, change: f.change, isNew: f.isNew, sizeBytes };
+    const common = { path: f.path, origPath: f.origPath, change: f.change, isNew: f.isNew, sizeBytes };
     if (isUntracked(f)) {
       let buf: Buffer;
       try {
@@ -136,33 +123,49 @@ export async function collectDiff(root: string, scope: Scope, opts: DiffOptions)
         buf = Buffer.alloc(0);
       }
       if (looksBinary(buf)) {
-        out.push({ ...base, binary: true, added: 0, removed: 0, summarized: true });
+        out.push({ ...common, binary: true, added: 0, removed: 0, summarized: true });
       } else {
         const { patch, lines } = newFilePatch(f.path, buf.toString('utf8'));
-        out.push({ ...base, binary: false, added: lines, removed: 0, patch, summarized: false });
+        out.push({ ...common, binary: false, added: lines, removed: 0, patch, summarized: false });
       }
       continue;
     }
     const n = numstat.get(f.path) ?? { added: 0, removed: 0, binary: false };
-    const header = `a/${f.origPath ?? f.path} b/${f.path}`;
-    out.push({
-      ...base,
+    const entry: FileDiff = {
+      ...common,
       binary: n.binary,
       added: n.added,
       removed: n.removed,
-      patch: n.binary ? undefined : patches.get(header),
       summarized: n.binary,
-    });
+    };
+    // Every patch line costs at least 2 bytes, so this is a cheap lower bound on the patch size.
+    const tooBig = (n.added + n.removed) * 2 > opts.maxFileDiffBytes;
+    if (n.binary || tooBig || summaryExt.has(extname(f.path).toLowerCase())) entry.summarized = true;
+    else toFetch.push(entry);
+    out.push(entry);
   }
 
-  const summaryExt = new Set(opts.summaryOnlyExtensions.map((e) => e.toLowerCase()));
+  // One path per git call, a few at a time: summarized files never cost a patch fetch.
+  let next = 0;
+  const worker = async () => {
+    while (next < toFetch.length) {
+      const d = toFetch[next++];
+      const paths = d.origPath ? [d.origPath, d.path] : [d.path];
+      try {
+        d.patch = (await runGit(root, [...base, ...DIFF_FLAGS, '--', ...paths])).stdout;
+      } catch {
+        d.summarized = true;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(FETCH_PARALLELISM, toFetch.length) }, worker));
   const drop = (d: FileDiff) => {
     d.patch = undefined;
     d.summarized = true;
   };
   for (const d of out) {
     if (d.patch === undefined) continue;
-    if (summaryExt.has(extname(d.path).toLowerCase()) || Buffer.byteLength(d.patch) > opts.maxFileDiffBytes) drop(d);
+    if (Buffer.byteLength(d.patch) > opts.maxFileDiffBytes) drop(d);
   }
   const withPatch = out
     .filter((d) => d.patch !== undefined)

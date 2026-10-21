@@ -144,4 +144,30 @@ describe('diffCollector', () => {
     assert.equal(out[0].added, 1);
     assert.ok(out[0].patch!.includes('+hello'));
   });
+
+  it('huge summary-only diff does not blow the git buffer', async function () {
+    this.timeout(180_000);
+    const NL = String.fromCharCode(10);
+    const body = (p: string) =>
+      Array.from({ length: 600_000 }, (_, i) => p + String(i).padStart(8, '0') + 'x'.repeat(50)).join(NL) + NL;
+    repo = await createTempRepo({ 'big.asset': body('old'), 'a.txt': 'a' + NL });
+    repo.write('big.asset', body('new'));
+    repo.write('a.txt', 'a' + NL + 'b' + NL);
+    const out = await collectDiff(repo.root, manual('all', ['big.asset', 'a.txt']), DEFAULT_DIFF_OPTIONS);
+    const big = out.find((f) => f.path === 'big.asset')!;
+    assert.equal(big.patch, undefined);
+    assert.equal(big.summarized, true);
+    assert.equal(big.added, 600_000);
+    assert.ok(out.find((f) => f.path === 'a.txt')!.patch!.includes('+b'));
+  });
+
+  it('survives diff.noprefix and diff.mnemonicPrefix', async () => {
+    repo = await createTempRepo({ 'a.txt': 'a\n' });
+    await repo.git('config', 'diff.noprefix', 'true');
+    await repo.git('config', 'diff.mnemonicPrefix', 'true');
+    repo.write('a.txt', 'a\nb\n');
+    const [d] = await collectDiff(repo.root, manual('all', ['a.txt']), DEFAULT_DIFF_OPTIONS);
+    assert.ok(d.patch!.includes('+b'));
+    assert.ok(d.patch!.includes('diff --git a/a.txt b/a.txt'));
+  });
 });
