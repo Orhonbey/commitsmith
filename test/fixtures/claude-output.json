@@ -1,0 +1,1 @@
+{"type":"result","subtype":"success","is_error":false,"stop_reason":"tool_use","terminal_reason":"completed","num_turns":2,"result":"{\"reply\":\"OK\"}","structured_output":{"reply":"OK"}}
