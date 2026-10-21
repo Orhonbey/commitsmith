@@ -104,6 +104,23 @@ describe('diffCollector', () => {
     assert.ok(out[0].patch!.includes('+more'));
   });
 
+  it('an untracked file without a final newline gets the git "No newline at end of file" marker line', async () => {
+    repo = await createTempRepo({ 'a.txt': 'a\n' });
+    repo.write('n.txt', 'one\ntwo');
+    const scope = resolveScope(await readStatus(repo.root), { includeUntracked: true });
+    const [d] = (await collectDiff(repo.root, scope, DEFAULT_DIFF_OPTIONS)).filter((f) => f.path === 'n.txt');
+    assert.ok(d.patch!.endsWith('+two\n\\ No newline at end of file\n'), JSON.stringify(d.patch));
+  });
+
+  it('a path with glob characters gets only its own patch', async () => {
+    repo = await createTempRepo({ 'a.txt': 'a\n', '[a].txt': 'x\n' });
+    repo.write('a.txt', 'A-CHANGED\n');
+    repo.write('[a].txt', 'X-CHANGED\n');
+    const [d] = await collectDiff(repo.root, manual('all', ['[a].txt']), DEFAULT_DIFF_OPTIONS);
+    assert.ok(d.patch!.includes('+X-CHANGED'));
+    assert.ok(!d.patch!.includes('A-CHANGED'), d.patch);
+  });
+
   it('untracked text and binary files', async () => {
     repo = await createTempRepo({ 'a.txt': 'a\n' });
     repo.write('new file.txt', 'l1\nl2\nl3');

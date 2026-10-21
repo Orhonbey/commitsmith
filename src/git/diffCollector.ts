@@ -119,7 +119,7 @@ function newFilePatch(path: string, content: string): { patch: string; lines: nu
     `@@ -0,0 +1,${lines.length} @@\n` +
     lines.map((l) => '+' + l).join('\n') +
     '\n';
-  if (!endsWithNl) patch += '\ No newline at end of file\n';
+  if (!endsWithNl) patch += '\\ No newline at end of file\n';
   return { patch, lines: lines.length };
 }
 
