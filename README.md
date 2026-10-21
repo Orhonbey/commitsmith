@@ -29,9 +29,9 @@ Four buttons appear in the title bar of the Source Control panel (and in the Com
 CommitSmith looks for the executable on your `PATH` first, then in these fallback places:
 
 - **Claude Code** (`claude`): `~/.local/bin`, `~/.claude/local`, and on Windows `%APPDATA%\npm` (`claude.exe` / `claude.cmd`).
-- **Codex** (`codex`): on Windows `%LOCALAPPDATA%\OpenAI\Codex\bin` (and its version sub-folders; the newest version wins).
+- **Codex** (`codex`): on Windows `%LOCALAPPDATA%\OpenAI\Codex\bin` (and its version sub-folders; the newest version wins). Outside Windows, Codex is found via `PATH` only.
 
-Install and sign in to the tool in a terminal first. Models: Claude shows Haiku, Sonnet and Opus plus any ids in `commitsmith.models.claude`; Codex reads the list from its own model cache (`$CODEX_HOME/models_cache.json`, default `~/.codex`) and falls back to `commitsmith.models.codex`.
+Install and sign in to the tool in a terminal first. Models: Claude shows Haiku, Sonnet and Opus plus any ids in `commitsmith.models.claude`; Codex lists the models its own cache (`$CODEX_HOME/models_cache.json`, default `~/.codex`) marks as listed (visibility `list`) and falls back to `commitsmith.models.codex`.
 
 ## Settings
 
@@ -53,7 +53,8 @@ Install and sign in to the tool in a terminal first. Models: Claude shows Haiku,
 
 - Your diff is sent to the chosen CLI's provider (Anthropic for Claude Code, OpenAI for Codex), under your own account and its terms. CommitSmith has no server and sends nothing anywhere else.
 - Summary-only files (see `summaryOnlyExtensions`), binary files, and files over the size limits are sent as name and size only, not content.
-- The CLI runs with no tools, no MCP servers and no settings files, so it cannot read other files, run commands, or trigger a repository's own hooks.
+- **Claude Code** runs with no tools, no MCP servers and no settings files, so a repository's own hooks never run.
+- **Codex** runs in a read-only sandbox with an ephemeral session. It may read repository files and uses your own Codex configuration.
 
 ## Workspace Trust
 
