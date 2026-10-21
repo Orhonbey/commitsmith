@@ -12,7 +12,7 @@ import {
 type Input = Parameters<typeof buildChangeGroups>[0];
 
 const c = (path: string, status: number, origPath?: string): RawChange => ({ path, status, origPath });
-const build = (o: Partial<Input> = {}) => buildChangeGroups({ index: [], working: [], untracked: [], includeUntracked: false, ...o });
+const build = (o: Partial<Input> = {}) => buildChangeGroups({ merge: [], index: [], working: [], untracked: [], includeUntracked: false, ...o });
 const files = (g: { items: unknown[] }) => g.items.filter((i): i is FileItem => (i as FileItem).kind === 'file');
 
 describe('changes model', () => {
@@ -43,21 +43,9 @@ describe('changes model', () => {
     const f = files(g)[0];
     assert.equal(f.name, 'Foo.cs');
     assert.equal(f.dir, 'Assets/Scripts');
-    assert.equal(f.letter, 'M');
     assert.equal(f.change, 'modified');
     assert.equal(f.group, 'staged');
     assert.equal(files(build({ index: [c('top.txt', S.INDEX_ADDED)] })[0])[0].dir, '');
-  });
-
-  it('status letters', () => {
-    const letter = (status: number, where: 'index' | 'working') => files(build({ [where]: [c('f', status)] })[0])[0].letter;
-    assert.equal(letter(S.INDEX_ADDED, 'index'), 'A');
-    assert.equal(letter(S.INDEX_DELETED, 'index'), 'D');
-    assert.equal(letter(S.INDEX_RENAMED, 'index'), 'R');
-    assert.equal(letter(S.INDEX_COPIED, 'index'), 'C');
-    assert.equal(letter(S.DELETED, 'working'), 'D');
-    assert.equal(letter(S.TYPE_CHANGED, 'working'), 'T');
-    assert.equal(letter(S.INTENT_TO_ADD, 'working'), 'A');
   });
 
   it('ignored files are dropped', () => {
@@ -77,12 +65,35 @@ describe('changes model', () => {
     assert.equal(g[0].count, 1);
   });
 
-  it('new files group says they are left out only when nothing is staged and includeUntracked is off', () => {
+  it('new files are left out of Write + Commit when anything is staged or includeUntracked is off', () => {
     const untracked = [c('n', S.UNTRACKED)];
     const flag = (o: Partial<Input>) => build({ untracked, ...o }).find((x) => x.id === 'untracked')!.leftOut;
     assert.equal(flag({}), true);
     assert.equal(flag({ includeUntracked: true }), false);
-    assert.equal(flag({ index: [c('s', S.INDEX_MODIFIED)] }), false);
+    assert.equal(flag({ index: [c('s', S.INDEX_MODIFIED)] }), true);
+    assert.equal(flag({ includeUntracked: true, index: [c('s', S.INDEX_MODIFIED)] }), true);
+  });
+
+  it('a staged rename lists the old path too, so Unstage resets both sides', () => {
+    const [g] = build({ index: [c('new/b.cs', S.INDEX_RENAMED, 'old/a.cs'), c('x.cs', S.INDEX_MODIFIED)] });
+    assert.deepEqual([...g.paths].sort(), ['new/b.cs', 'old/a.cs', 'x.cs']);
+    assert.equal(g.count, 2);
+  });
+
+  it('merge conflicts form a read-only group on top, never discardable', () => {
+    const g = build({ merge: [c('m.cs', S.BOTH_MODIFIED)], index: [c('s', S.INDEX_MODIFIED)] });
+    assert.deepEqual(g.map((x) => x.id), ['merge', 'staged']);
+    const f = files(g[0])[0];
+    assert.equal(f.change, 'conflict');
+    assert.equal(f.canDiscard, false);
+    assert.equal(g[0].leftOut, false);
+    assert.deepEqual(diffTarget(f), { kind: 'open', title: 'file', side: { ref: 'worktree', path: 'm.cs' } });
+  });
+
+  it('a file that only has intent-to-add cannot be discarded', () => {
+    const [g] = build({ working: [c('i.cs', S.INTENT_TO_ADD), c('w.cs', S.MODIFIED)] });
+    assert.deepEqual(files(g).map((f) => f.canDiscard), [false, true]);
+    assert.deepEqual(g.discardPaths, ['w.cs']);
   });
 
   it('only the Changes group can discard, and not new files', () => {
@@ -124,7 +135,7 @@ describe('changes model', () => {
 
   describe('diffTarget', () => {
     const item = (o: Partial<FileItem>): FileItem => ({
-      kind: 'file', group: 'changes', path: 'a/f.cs', name: 'f.cs', dir: 'a', letter: 'M', change: 'modified', canDiscard: true, ...o,
+      kind: 'file', group: 'changes', path: 'a/f.cs', name: 'f.cs', dir: 'a', change: 'modified', canDiscard: true, ...o,
     });
 
     it('staged: HEAD <-> index', () => {

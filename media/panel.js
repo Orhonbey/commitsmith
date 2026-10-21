@@ -23,15 +23,19 @@
   const box = el('textarea', 'message');
   box.rows = 3;
   box.spellcheck = false;
+  box.maxLength = 10000;
   const actionsHolder = el('div');
   const infoHolder = el('div');
   root.append(aiHolder, repoHolder, box, actionsHolder, infoHolder);
 
+  // Focus can stay on the box after the user clicks elsewhere in VS Code; tell the extension so it re-sends the real value.
+  box.addEventListener('blur', () => post({ type: 'blur' }));
+  window.addEventListener('blur', () => post({ type: 'blur' }));
   box.addEventListener('input', () => post({ type: 'setMessage', value: box.value }));
 
   // Skipped while the box has focus, so typing is never overwritten.
   function showMessage(value) {
-    if (document.activeElement === box || box.value === value) return;
+    if ((document.hasFocus() && document.activeElement === box) || box.value === value) return;
     box.value = value;
   }
 

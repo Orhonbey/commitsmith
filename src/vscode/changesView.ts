@@ -52,6 +52,7 @@ function statusWord(kind: ChangeKind): string {
 }
 
 function groupLabel(id: GroupId, count: number): string {
+  if (id === 'merge') return vscode.l10n.t('Merge Changes ({0})', count);
   if (id === 'staged') return vscode.l10n.t('Staged Changes ({0})', count);
   if (id === 'changes') return vscode.l10n.t('Changes ({0})', count);
   return vscode.l10n.t('New Files ({0})', count);
@@ -63,6 +64,8 @@ export class ChangesView implements vscode.TreeDataProvider<ChangeNode>, vscode.
   readonly onDidChangeTreeData = this.emitter.event;
   private loaded: Loaded | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  /** Bumped on every refresh, so a load that started before it cannot cache stale data. */
+  private generation = 0;
   private readonly subs: vscode.Disposable[] = [];
   private readonly watcher: RepoWatcher;
 
@@ -90,6 +93,7 @@ export class ChangesView implements vscode.TreeDataProvider<ChangeNode>, vscode.
   refresh(delay = 150): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => {
+      this.generation++;
       this.loaded = undefined;
       this.emitter.fire(undefined);
     }, delay);
@@ -108,6 +112,7 @@ export class ChangesView implements vscode.TreeDataProvider<ChangeNode>, vscode.
       root,
       repo,
       groups: buildChangeGroups({
+        merge: raw(st.mergeChanges),
         index: raw(st.indexChanges),
         working: raw(st.workingTreeChanges),
         untracked: raw(st.untrackedChanges),
@@ -117,8 +122,11 @@ export class ChangesView implements vscode.TreeDataProvider<ChangeNode>, vscode.
   }
 
   private async current(): Promise<Loaded | undefined> {
-    this.loaded ??= await this.load();
-    return this.loaded;
+    if (this.loaded) return this.loaded;
+    const gen = this.generation;
+    const fresh = await this.load();
+    if (gen === this.generation) this.loaded = fresh;
+    return fresh;
   }
 
   async getChildren(node?: ChangeNode): Promise<ChangeNode[]> {
@@ -149,7 +157,7 @@ export class ChangesView implements vscode.TreeDataProvider<ChangeNode>, vscode.
     t.resourceUri = vscode.Uri.file(path.join(node.root, f.path));
     t.description = f.dir;
     t.tooltip = `${f.origPath ? `${f.origPath} → ` : ''}${f.path}\n${statusWord(f.change)}`;
-    t.contextValue = f.group === 'staged' ? 'file.staged' : f.group === 'changes' ? 'file.changes' : 'file.new';
+    t.contextValue = f.group === 'merge' ? 'file.merge' : f.group === 'staged' ? 'file.staged' : f.group === 'changes' ? 'file.changes' : 'file.new';
     t.command = { command: 'commitsmith.openChange', title: '', arguments: [node] };
     return t;
   }
@@ -169,7 +177,7 @@ export class ChangesView implements vscode.TreeDataProvider<ChangeNode>, vscode.
     if (!first || !repo) return undefined;
     const root = repo.rootUri.fsPath;
     const items = list
-      .filter((n): n is FileNode => n?.type === 'file' && n.root === root && typeof n.item?.path === 'string' && this.inside(root, n.item.path))
+      .filter((n): n is FileNode => n?.type === 'file' && n.root === root && typeof n.item?.path === 'string' && this.inside(root, n.item.path) && (n.item.origPath === undefined || (typeof n.item.origPath === 'string' && this.inside(root, n.item.origPath))))
       .map((n) => n.item);
     return items.length > 0 ? { repo, root, items } : undefined;
   }
@@ -200,21 +208,40 @@ export class ChangesView implements vscode.TreeDataProvider<ChangeNode>, vscode.
     return false;
   }
 
+  /** Items plus their old rename paths: unstaging only the new path would leave the old path's deletion staged. */
+  private withOrig(items: FileItem[]): string[] {
+    return [...new Set(items.flatMap((i) => (i.origPath ? [i.path, i.origPath] : [i.path])))];
+  }
+
   stage = async (node?: unknown, nodes?: unknown): Promise<void> => {
     const f = await this.files(node, nodes);
-    if (f && this.free(f.root)) await f.repo.add(this.abs(f.root, f.items.map((i) => i.path)));
+    if (!f || !this.free(f.root)) return;
+    // Staging a conflicted file marks it resolved: ask first. The state is re-read, not taken from the node.
+    const cur = await this.load();
+    const conflicted = new Set(cur?.root === f.root ? cur.groups.find((g) => g.id === 'merge')?.paths : []);
+    const marked = f.items.filter((i) => conflicted.has(i.path));
+    if (marked.length > 0) {
+      const text = marked.length === 1
+        ? vscode.l10n.t('Mark {0} as resolved?', marked[0].name)
+        : vscode.l10n.t('Mark {0} files as resolved?', marked.length);
+      const yes = vscode.l10n.t('Mark as resolved');
+      if ((await vscode.window.showWarningMessage(text, { modal: true }, yes)) !== yes) return;
+    }
+    await f.repo.add(this.abs(f.root, f.items.map((i) => i.path)));
   };
 
   unstage = async (node?: unknown, nodes?: unknown): Promise<void> => {
     const f = await this.files(node, nodes);
-    if (f && this.free(f.root)) await f.repo.revert(this.abs(f.root, f.items.map((i) => i.path)));
+    if (f && this.free(f.root)) await f.repo.revert(this.abs(f.root, this.withOrig(f.items)));
   };
 
-  /** Asks first, always; restores tracked files only (new files never offer discard). */
+  /** Asks first, always; restores tracked files only. What may be restored is re-read from the repository, not from the node. */
   discard = async (node?: unknown, nodes?: unknown): Promise<void> => {
     const f = await this.files(node, nodes);
     if (!f || !this.free(f.root)) return;
-    const items = f.items.filter((i) => i.canDiscard);
+    const cur = await this.load();
+    const allowed = new Set(cur?.root === f.root ? cur.groups.find((g) => g.id === 'changes')?.discardPaths : []);
+    const items = f.items.filter((i) => allowed.has(i.path));
     if (items.length === 0) return;
     const text = items.length === 1
       ? vscode.l10n.t('Discard changes in {0}? This cannot be undone.', items[0].name)
@@ -224,18 +251,19 @@ export class ChangesView implements vscode.TreeDataProvider<ChangeNode>, vscode.
 
   stageAll = async (node?: unknown): Promise<void> => {
     const g = await this.groupOf(node);
-    if (g && g.group.id !== 'staged' && this.free(g.root)) await g.repo.add(this.abs(g.root, g.group.paths));
+    if (g && (g.group.id === 'changes' || g.group.id === 'untracked') && this.free(g.root)) await g.repo.add(this.abs(g.root, g.group.paths));
   };
 
   unstageAll = async (node?: unknown): Promise<void> => {
     const g = await this.groupOf(node);
-    if (g && g.group.id === 'staged' && this.free(g.root)) await g.repo.revert(this.abs(g.root, g.group.paths));
+    if (g && g.group.id === 'staged' && this.free(g.root)) await g.repo.revert(this.abs(g.root, g.group.paths)); // a staged group's paths include old rename paths
   };
 
   discardAll = async (node?: unknown): Promise<void> => {
     const g = await this.groupOf(node);
     if (!g || g.group.id !== 'changes' || !this.free(g.root)) return;
-    await this.confirmedClean(g.repo, g.root, g.group.paths, vscode.l10n.t('Discard all {0} changes? This cannot be undone.', g.group.count));
+    if (g.group.discardPaths.length === 0) return;
+    await this.confirmedClean(g.repo, g.root, g.group.discardPaths, vscode.l10n.t('Discard all {0} changes? This cannot be undone.', g.group.discardPaths.length));
   };
 
   private async confirmedClean(repo: GitRepository, root: string, paths: string[], text: string): Promise<void> {

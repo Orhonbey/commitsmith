@@ -5,6 +5,7 @@
 - The Activity Bar panel now looks like Source Control: a commit message box synced with the Source Control box, the four actions (Push shows the commits waiting), an info line, and a native **Changes** tree with Staged Changes, Changes and New Files.
 - Click a file to open its diff; inline Stage, Unstage, Discard changes and Open file; Stage all, Unstage all and Discard all on the groups; Copy relative path in the context menu. Discard always asks first and is never offered for new files.
 - **Recent** is now its own collapsed tree; click a commit to copy its id.
+- A **Merge Changes** group lists conflicted files during a merge; staging one asks "Mark as resolved?". Unstaging a rename resets both paths.
 - Groups show at most 500 files, then "… n more files".
 
 ## 0.2.0

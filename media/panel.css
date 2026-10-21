@@ -54,6 +54,7 @@ button, select, textarea { font-family: inherit; font-size: inherit; }
   border: 1px solid var(--vscode-input-border, transparent);
   border-radius: 2px;
 }
+.message[hidden] { display: none; }
 .message::placeholder { color: var(--vscode-input-placeholderForeground); }
 .message:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
 

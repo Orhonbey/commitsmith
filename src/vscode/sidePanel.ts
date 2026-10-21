@@ -17,6 +17,7 @@ export type PanelAction = (typeof PANEL_ACTIONS)[number];
 
 export type PanelMessage =
   | { type: 'ready' }
+  | { type: 'blur' }
   | { type: 'pickModel' }
   | { type: 'run'; action: PanelAction }
   | { type: 'selectRepo'; root: string }
@@ -31,6 +32,7 @@ export function parsePanelMessage(raw: unknown, roots: readonly string[]): Panel
   const m = raw as Record<string, unknown>;
   switch (m.type) {
     case 'ready':
+    case 'blur':
     case 'pickModel':
       return { type: m.type };
     case 'run':
@@ -191,6 +193,13 @@ export class SidePanel implements vscode.WebviewViewProvider, vscode.Disposable 
       case 'ready':
         await this.refresh();
         break;
+      case 'blur': {
+        // The webview lost focus: whatever the Source Control box holds now is what it should show.
+        const repo = await this.repo();
+        this.known = repo?.inputBox.value ?? '';
+        void this.view?.webview.postMessage({ type: 'message', value: this.known });
+        break;
+      }
       case 'pickModel':
         await this.commands.pickModel();
         break;

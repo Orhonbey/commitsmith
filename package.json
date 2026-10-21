@@ -251,6 +251,31 @@
       "view/item/context": [
         {
           "command": "commitsmith.openFile",
+          "when": "view == commitsmith.changes && viewItem == file.merge",
+          "group": "inline@1"
+        },
+        {
+          "command": "commitsmith.stage",
+          "when": "view == commitsmith.changes && viewItem == file.merge",
+          "group": "inline@3"
+        },
+        {
+          "command": "commitsmith.stage",
+          "when": "view == commitsmith.changes && viewItem == file.merge",
+          "group": "1_modification@1"
+        },
+        {
+          "command": "commitsmith.openFile",
+          "when": "view == commitsmith.changes && viewItem == file.merge",
+          "group": "navigation@1"
+        },
+        {
+          "command": "commitsmith.copyPath",
+          "when": "view == commitsmith.changes && viewItem == file.merge",
+          "group": "2_copy@1"
+        },
+        {
+          "command": "commitsmith.openFile",
           "when": "view == commitsmith.changes && viewItem == file.staged",
           "group": "inline@1"
         },

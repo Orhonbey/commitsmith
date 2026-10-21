@@ -27,7 +27,7 @@ export const CHANGE_STATUS = {
 /** A group shows at most this many files, then one "… n more files" item. */
 export const MAX_ITEMS_PER_GROUP = 500;
 
-export type GroupId = 'staged' | 'changes' | 'untracked';
+export type GroupId = 'merge' | 'staged' | 'changes' | 'untracked';
 export type ChangeKind = 'modified' | 'added' | 'deleted' | 'renamed' | 'copied' | 'untracked' | 'typeChanged' | 'conflict';
 
 /** One entry of the git extension's change lists; paths are relative to the repository root, with `/`. */
@@ -41,7 +41,6 @@ export type FileItem = {
   name: string;
   /** Folder of the file, relative to the repository root ('' at the top level). */
   dir: string;
-  letter: string;
   change: ChangeKind;
   canDiscard: boolean;
 };
@@ -51,14 +50,17 @@ export type ChangeGroup = {
   id: GroupId;
   /** All files in the group, also those past the cap. */
   count: number;
-  /** Every path of the group (for Stage all / Unstage all / Discard all). */
+  /** Every path of the group (for Stage all / Unstage all / Discard all); a staged rename lists both paths. */
   paths: string[];
+  /** Paths that Discard may restore (tracked, not intent-to-add). */
+  discardPaths: string[];
   /** New files only: they are not part of Write + Commit. */
   leftOut: boolean;
   items: (FileItem | MoreItem)[];
 };
 
 export type ChangesInput = {
+  merge: readonly RawChange[];
   index: readonly RawChange[];
   working: readonly RawChange[];
   untracked: readonly RawChange[];
@@ -86,16 +88,6 @@ const KIND: Record<number, ChangeKind | undefined> = {
   [C.BOTH_DELETED]: 'conflict',
   [C.BOTH_MODIFIED]: 'conflict',
 };
-const LETTER: Record<ChangeKind, string> = {
-  modified: 'M',
-  added: 'A',
-  deleted: 'D',
-  renamed: 'R',
-  copied: 'C',
-  untracked: 'U',
-  typeChanged: 'T',
-  conflict: '!',
-};
 
 function toItem(group: GroupId, r: RawChange, change: ChangeKind): FileItem {
   const slash = r.path.lastIndexOf('/');
@@ -106,10 +98,9 @@ function toItem(group: GroupId, r: RawChange, change: ChangeKind): FileItem {
     ...(r.origPath ? { origPath: r.origPath } : {}),
     name: r.path.slice(slash + 1),
     dir: slash < 0 ? '' : r.path.slice(0, slash),
-    letter: LETTER[change],
     change,
-    // Discard restores tracked files; a new file would be deleted, so it never offers it.
-    canDiscard: group === 'changes',
+    // Discard restores tracked files; a new file (or an intent-to-add one) would be deleted, so it never offers it.
+    canDiscard: group === 'changes' && change !== 'added' && change !== 'untracked',
   };
 }
 
@@ -123,19 +114,23 @@ function makeGroup(id: GroupId, raw: readonly RawChange[], leftOut: boolean): Ch
   items.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const shown: (FileItem | MoreItem)[] = items.slice(0, MAX_ITEMS_PER_GROUP);
   if (items.length > MAX_ITEMS_PER_GROUP) shown.push({ kind: 'more', count: items.length - MAX_ITEMS_PER_GROUP });
-  return { id, count: items.length, paths: items.map((i) => i.path), leftOut, items: shown };
+  // Unstaging a rename must reset the old path as well, or its deletion stays staged.
+  const paths = [...new Set(items.flatMap((i) => (id === 'staged' && i.origPath ? [i.path, i.origPath] : [i.path])))];
+  const discardPaths = items.filter((i) => i.canDiscard).map((i) => i.path);
+  return { id, count: items.length, paths, discardPaths, leftOut, items: shown };
 }
 
-/** Staged, Changes and New Files; empty groups are left out. */
+/** Merge Changes, Staged, Changes and New Files; empty groups are left out. */
 export function buildChangeGroups(i: ChangesInput): ChangeGroup[] {
   // The API lists new files in `untrackedChanges` when it can, otherwise inside `workingTreeChanges`.
   const isNew = (r: RawChange) => r.status === C.UNTRACKED;
   const fresh = new Map<string, RawChange>();
   for (const r of [...i.untracked, ...i.working.filter(isNew)]) fresh.set(r.path, r);
+  const merge = makeGroup('merge', i.merge, false);
   const staged = makeGroup('staged', i.index, false);
   const changes = makeGroup('changes', i.working.filter((r) => !isNew(r)), false);
-  const untracked = makeGroup('untracked', [...fresh.values()], !i.includeUntracked && !staged);
-  return [staged, changes, untracked].filter((g): g is ChangeGroup => !!g);
+  const untracked = makeGroup('untracked', [...fresh.values()], !!staged || !i.includeUntracked);
+  return [merge, staged, changes, untracked].filter((g): g is ChangeGroup => !!g);
 }
 
 /** Where a file side lives: HEAD, the index (''), or the file on disk. */
@@ -147,7 +142,7 @@ export type OpenTarget =
 /** What a click on a file opens, matching the Source Control view. */
 export function diffTarget(f: FileItem): OpenTarget {
   const here = f.path;
-  if (f.group === 'untracked') return { kind: 'open', title: 'file', side: { ref: 'worktree', path: here } };
+  if (f.group === 'untracked' || f.group === 'merge') return { kind: 'open', title: 'file', side: { ref: 'worktree', path: here } };
   if (f.group === 'staged') {
     if (f.change === 'deleted') return { kind: 'open', title: 'head', side: { ref: 'HEAD', path: here } };
     if (f.change === 'added') return { kind: 'open', title: 'index', side: { ref: '', path: here } };

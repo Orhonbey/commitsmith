@@ -156,12 +156,12 @@ export async function run(): Promise<void> {
     assert.ok(ok(t), what + '; tree: ' + JSON.stringify(t.map((g) => [g.group.id, paths(t, g.group.id)])));
     return t;
   };
-  let t = await until((x) => paths(x, 'staged').includes('b.txt') && paths(x, 'changes').includes('c.txt') && paths(x, 'untracked').includes('f.txt'), 'the three groups list their files');
+  let t: Tree = await until((x) => paths(x, 'staged').includes('b.txt') && paths(x, 'changes').includes('c.txt') && paths(x, 'untracked').includes('f.txt'), 'the three groups list their files');
   assert.deepEqual(t.map((g) => g.group.id), ['staged', 'changes', 'untracked'], 'Staged, Changes, New Files in that order');
   assert.deepEqual(paths(t, 'staged'), ['b.txt']);
   assert.deepEqual(paths(t, 'changes'), ['c.txt']);
   assert.deepEqual(paths(t, 'untracked'), ['f.txt']);
-  assert.equal(t[2].group.leftOut, false, 'with something staged the New Files group carries no left-out note');
+  assert.equal(t[2].group.leftOut, true, 'with something staged the New Files group says it is not part of Write + Commit');
 
   // Stage moves the modified file to Staged, Unstage moves it back.
   await vscode.commands.executeCommand('commitsmith.stage', t[1].children[0]);
@@ -197,4 +197,60 @@ export async function run(): Promise<void> {
   await vscode.commands.executeCommand('commitsmith.stage', { type: 'file', root: repoPath, item: { path: '../escape.txt' } });
   t = await tree();
   assert.deepEqual(paths(t, 'staged'), ['b.txt'], 'forged stage requests change nothing');
+
+  // ---- Fix round: forged discard, blur, renames and merge conflicts ----
+  const win2: any = vscode.window;
+  const realWarn2 = win2.showWarningMessage;
+  let asked2 = 0;
+  let answer: unknown;
+  win2.showWarningMessage = (...args: any[]) => {
+    asked2++;
+    return Promise.resolve(answer === 'first-button' ? args[2] : answer);
+  };
+  try {
+    // A forged node that claims a new file / a staged file is discardable gets no modal at all.
+    const lie = (path: string) => ({ type: 'file', root: repoPath, item: { kind: 'file', group: 'changes', path, name: path, dir: '', change: 'modified', canDiscard: true } });
+    await vscode.commands.executeCommand('commitsmith.discard', lie('f.txt'));
+    await vscode.commands.executeCommand('commitsmith.discard', lie('b.txt'));
+    assert.equal(asked2, 0, 'a forged discard of an untracked or staged-only file shows no modal');
+    assert.ok(existsSync(join(repoPath, 'f.txt')));
+    await panelState({ type: 'blur' });
+
+    // Rename: Unstage resets both paths.
+    gitOut('reset', '-q');
+    gitOut('checkout', '--', '.');
+    gitOut('clean', '-fdq');
+    gitOut('mv', 'a.txt', 'a2.txt');
+    t = await until((x) => paths(x, 'staged').includes('a2.txt'), 'the staged rename is listed');
+    const ren = t.find((g) => g.group.id === 'staged')!.children.find((n: any) => n.item.path === 'a2.txt');
+    assert.equal(ren.item.origPath, 'a.txt');
+    await vscode.commands.executeCommand('commitsmith.unstage', ren);
+    t = await until((x) => paths(x, 'staged').length === 0, 'Unstage clears the rename from Staged');
+    assert.ok(paths(t, 'changes').includes('a.txt') && paths(t, 'untracked').includes('a2.txt'), 'the old path is a plain deletion and the new one is a new file');
+    gitOut('reset', '-q', '--hard');
+    gitOut('clean', '-fdq');
+
+    // Merge conflict: its own group; Stage asks "Mark as resolved?".
+    gitOut('checkout', '-q', '-b', 'side');
+    writeFileSync(join(repoPath, 'c.txt'), 'side\n');
+    gitOut('commit', '-q', '-am', 'side');
+    gitOut('checkout', '-q', 'topic');
+    writeFileSync(join(repoPath, 'c.txt'), 'topic\n');
+    gitOut('commit', '-q', '-am', 'topic');
+    try { gitOut('merge', 'side'); } catch { /* the conflict is the point */ }
+    t = await until((x) => paths(x, 'merge').includes('c.txt'), 'the conflicted file is in Merge Changes');
+    assert.equal(t[0].group.id, 'merge', 'Merge Changes is the first group');
+    const node = t[0].children[0];
+    answer = undefined;
+    await vscode.commands.executeCommand('commitsmith.stage', node);
+    assert.equal(asked2, 1, 'staging a conflicted file asks');
+    t = await tree();
+    assert.ok(paths(t, 'merge').includes('c.txt'), 'cancelling leaves it unresolved');
+    answer = 'first-button';
+    await vscode.commands.executeCommand('commitsmith.stage', node);
+    await until((x) => !paths(x, 'merge').includes('c.txt'), 'confirming marks it resolved');
+    gitOut('merge', '--abort');
+  } finally {
+    win2.showWarningMessage = realWarn2;
+  }
 }

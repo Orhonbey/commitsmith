@@ -110,5 +110,9 @@
   "Looks at: All changes ({0})": "Bakılan: Tüm değişiklikler ({0})",
   "{0} → {1}": "{0} → {1}",
   "{0} → no upstream": "{0} → upstream yok",
-  "{0} commits to push": "{0} commit gidecek"
+  "{0} commits to push": "{0} commit gidecek",
+  "Merge Changes ({0})": "Birleştirme değişiklikleri ({0})",
+  "Mark {0} as resolved?": "{0} çözüldü olarak işaretlensin mi?",
+  "Mark {0} files as resolved?": "{0} dosya çözüldü olarak işaretlensin mi?",
+  "Mark as resolved": "Çözüldü olarak işaretle"
 }
