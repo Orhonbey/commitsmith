@@ -1,8 +1,11 @@
 import type { FileDiff } from '../git/diffCollector';
 import type { RepoContext } from './repoContext';
 
-/** Groups the user edited or moved files into; the AI must keep them as they are. */
-export type PlanLocks = { groups: { message: string; files: string[] }[] };
+/**
+ * Groups the user edited, ticked/unticked or moved files into; the AI must keep them as they are.
+ * `checked` (absent = true) is restored by parsePlan, so Regroup never re-ticks an unticked group.
+ */
+export type PlanLocks = { groups: { message: string; files: string[]; checked?: boolean }[] };
 
 export const SPLIT_SCHEMA = {
   type: 'object',

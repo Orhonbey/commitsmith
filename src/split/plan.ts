@@ -87,6 +87,7 @@ export function parsePlan(json: string, scoped: ScopedFile[], locks?: PlanLocks)
   const lockedGroups = (locks?.groups ?? [])
     .map((g) => ({
       message: g.message,
+      checked: g.checked !== false,
       files: [...new Set(g.files.map(canon).filter((p): p is string => p !== undefined))].filter((p) => {
         if (lockedSet.has(p)) return false; // first locked group wins
         lockedSet.add(p);
@@ -96,16 +97,32 @@ export function parsePlan(json: string, scoped: ScopedFile[], locks?: PlanLocks)
     .filter((g) => g.files.length > 0);
 
   const groups: PlanGroup[] = [];
-  const push = (g: Omit<PlanGroup, 'id' | 'checked'>) =>
-    groups.push({ ...g, id: `g${groups.length + 1}`, checked: !g.uncertain });
-  for (const g of lockedGroups) push({ message: g.message, files: g.files, reason: '', uncertain: false, locked: true });
+  const push = (g: Omit<PlanGroup, 'id'>) => groups.push({ ...g, id: `g${groups.length + 1}` });
+  for (const g of lockedGroups) {
+    push({ message: g.message, files: g.files, reason: '', uncertain: false, locked: true, checked: g.checked });
+  }
   for (const g of ai) {
     const files = g.files.filter((p) => !lockedSet.has(p));
-    if (files.length > 0) push({ ...g, files, locked: false });
+    if (files.length > 0) push({ ...g, files, locked: false, checked: !g.uncertain });
   }
 
   const assigned = new Set(groups.flatMap((g) => g.files));
   return { groups, unassigned: scoped.map((f) => f.path).filter((p) => !assigned.has(p)) };
+}
+
+/**
+ * Applies `clean` (cleanMessage) to the AI's group messages; locked groups keep the user's text.
+ * A message that cleans to nothing leaves its group in the plan, empty and unchecked.
+ */
+export function cleanPlanMessages(plan: SplitPlan, clean: (message: string) => string): SplitPlan {
+  return {
+    ...plan,
+    groups: plan.groups.map((g) => {
+      if (g.locked) return g;
+      const message = clean(g.message);
+      return { ...g, message, checked: g.checked && message !== '' };
+    }),
+  };
 }
 
 // ---- companions ------------------------------------------------------------
@@ -176,7 +193,7 @@ function companionOf(file: string): string {
   return file.endsWith('.meta') ? file.slice(0, -'.meta'.length) : `${file}.meta`;
 }
 
-/** Pure: returns a new plan. Moving a file or editing a message locks the touched groups. */
+/** Pure: returns a new plan. Moving a file, editing a message or ticking a group locks the touched groups. */
 export function applyEdit(plan: SplitPlan, edit: PlanEdit): SplitPlan {
   const groups = plan.groups.map((g) => ({ ...g, files: [...g.files] }));
   let unassigned = [...plan.unassigned];
@@ -191,6 +208,7 @@ export function applyEdit(plan: SplitPlan, edit: PlanEdit): SplitPlan {
     case 'toggle':
       if (index < 0) return plan;
       groups[index].checked = !groups[index].checked;
+      groups[index].locked = true;
       break;
     case 'reorder': {
       const to = index + edit.delta;
@@ -229,6 +247,8 @@ export function applyEdit(plan: SplitPlan, edit: PlanEdit): SplitPlan {
 /** The groups the user touched; Regroup must keep them as they are. */
 export function locksOf(plan: SplitPlan): PlanLocks {
   return {
-    groups: plan.groups.filter((g) => g.locked && g.files.length > 0).map((g) => ({ message: g.message, files: [...g.files] })),
+    groups: plan.groups
+      .filter((g) => g.locked && g.files.length > 0)
+      .map((g) => ({ message: g.message, files: [...g.files], checked: g.checked })),
   };
 }

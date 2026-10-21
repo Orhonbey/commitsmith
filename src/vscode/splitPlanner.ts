@@ -4,7 +4,8 @@ import { resolveScope, Scope } from '../git/scope';
 import { readStatus } from '../git/status';
 import { PlanLocks, SPLIT_SCHEMA, buildSplitPrompt } from '../prompt/prompts';
 import { readRepoContext } from '../prompt/repoContext';
-import { PlanError, SplitPlan, pairCompanions, parsePlan } from '../split/plan';
+import { cleanMessage } from '../message/clean';
+import { PlanError, SplitPlan, cleanPlanMessages, pairCompanions, parsePlan } from '../split/plan';
 import { fingerprintOf } from '../split/planState';
 import type { ToolPicker } from './statusBar';
 
@@ -60,7 +61,10 @@ export async function makePlan(env: PlannerEnv, root: string, locks?: PlanLocks)
           timeoutMs: cfg.get<number>('timeoutSeconds', 180) * 1000,
           signal: ctl.signal,
         });
-      const build = (raw: string) => pairCompanions(parsePlan(raw, scope.files, locks), scope.files);
+      const strip = cfg.get<boolean>('stripAiAttribution', true);
+      // AI messages get the same cleaning as Write message; an empty result leaves its group unchecked.
+      const build = (raw: string) =>
+        pairCompanions(cleanPlanMessages(parsePlan(raw, scope.files, locks), (m) => cleanMessage(m, strip)), scope.files);
       try {
         return build(await ask(prompt));
       } catch (e) {

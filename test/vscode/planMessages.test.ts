@@ -102,7 +102,7 @@ describe('plan message protocol', () => {
     const edited = handlePlanMessage(state({ stale: true }), { type: 'edit', ...rev, edit: { kind: 'message', groupId: 'g2', text: 'mine' } }).state;
     assert.deepEqual(handlePlanMessage(edited, { type: 'regroup', ...rev, locks: { groups: [{ message: 'x', files: ['evil'] }] } }).action, {
       kind: 'regroup',
-      locks: { groups: [{ message: 'mine', files: ['b.txt'] }] },
+      locks: { groups: [{ message: 'mine', files: ['b.txt'], checked: false }] },
     });
     assert.deepEqual(handlePlanMessage(state(), { type: 'cancel' }).action, { kind: 'cancel' });
     assert.equal(handlePlanMessage(state(), { type: 'ready' }).action.kind, 'render');

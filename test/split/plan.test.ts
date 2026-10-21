@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'mocha';
 import type { ScopedFile } from '../../src/git/scope';
-import { PlanError, applyEdit, locksOf, pairCompanions, parsePlan, toCommitGroups } from '../../src/split/plan';
+import { cleanMessage } from '../../src/message/clean';
+import { PlanError, applyEdit, cleanPlanMessages, locksOf, pairCompanions, parsePlan, toCommitGroups } from '../../src/split/plan';
 
 const sf = (path: string, o: Partial<ScopedFile> = {}): ScopedFile => ({ path, change: 'modified', isNew: false, ...o });
 const ai = (groups: { message: string; files: string[]; uncertain?: boolean }[]) =>
@@ -210,10 +211,11 @@ describe('split plan', () => {
       assert.deepEqual(out.groups.map((g) => g.locked), [false, true, false]);
     });
 
-    it('toggle flips checked only', () => {
+    it('toggle flips checked and locks the group', () => {
       const out = applyEdit(base(), { kind: 'toggle', groupId: 'g1' });
       assert.equal(out.groups[0].checked, false);
-      assert.deepEqual({ ...out.groups[0], checked: true }, base().groups[0]);
+      assert.deepEqual({ ...out.groups[0], checked: true, locked: false }, base().groups[0]);
+      assert.equal(out.groups[0].locked, true);
       assert.equal(applyEdit(out, { kind: 'toggle', groupId: 'g1' }).groups[0].checked, true);
     });
 
@@ -230,8 +232,8 @@ describe('split plan', () => {
       const p = applyEdit(applyEdit(base(), { kind: 'message', groupId: 'g2', text: 'mine' }), { kind: 'move', file: 'c.txt', toGroupId: 'g1' });
       assert.deepEqual(locksOf(p), {
         groups: [
-          { message: 'm-g1', files: ['Foo.cs', 'Foo.cs.meta', 'a.txt', 'c.txt'] },
-          { message: 'mine', files: ['b.txt'] },
+          { message: 'm-g1', files: ['Foo.cs', 'Foo.cs.meta', 'a.txt', 'c.txt'], checked: true },
+          { message: 'mine', files: ['b.txt'], checked: true },
         ],
       });
       assert.deepEqual(locksOf(base()), { groups: [] });
@@ -241,5 +243,38 @@ describe('split plan', () => {
       const p = applyEdit(base(), { kind: 'move', file: 'c.txt', toGroupId: 'g1' });
       assert.deepEqual(locksOf(p).groups.map((g) => g.message), ['m-g1']);
     });
+  });
+  describe('AI message cleaning (C2)', () => {
+    const clean = (m: string) => cleanMessage(m, true);
+    it('cleans AI group messages, keeps locked (user-typed) ones as they are', () => {
+      const scoped = [sf('a.txt'), sf('b.txt')];
+      const raw = JSON.stringify({
+        groups: [{ message: '```\nfeat: b\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n```', files: ['b.txt'], reason: 'r', uncertain: false }],
+        unassigned: [],
+      });
+      const plan = cleanPlanMessages(parsePlan(raw, scoped, { groups: [{ message: 'mine  ', files: ['a.txt'], checked: true }] }), clean);
+      assert.deepEqual(plan.groups.map((g) => [g.message, g.checked]), [['mine  ', true], ['feat: b', true]]);
+    });
+
+    it('an AI message that cleans to nothing leaves the group shown, empty and unchecked', () => {
+      const scoped = [sf('a.txt')];
+      const raw = ai([{ message: 'Co-Authored-By: Claude <noreply@anthropic.com>', files: ['a.txt'] }]);
+      const plan = cleanPlanMessages(parsePlan(raw, scoped), clean);
+      assert.deepEqual(plan.groups.map((g) => [g.message, g.checked, g.files]), [['', false, ['a.txt']]]);
+    });
+  });
+
+  it('regroup keeps an unticked group unticked (I1)', () => {
+    const scoped = [sf('a.txt'), sf('b.txt')];
+    let plan = parsePlan(ai([{ message: 'a', files: ['a.txt'] }, { message: 'b', files: ['b.txt'] }]), scoped);
+    plan = applyEdit(plan, { kind: 'toggle', groupId: 'g2' });
+    const locks = locksOf(plan);
+    assert.deepEqual(locks, { groups: [{ message: 'b', files: ['b.txt'], checked: false }] });
+    // The AI answers the regroup with the locked group ticked again; the user's choice wins.
+    const again = parsePlan(ai([{ message: 'a2', files: ['a.txt'] }, { message: 'b', files: ['b.txt'] }]), scoped, locks);
+    assert.deepEqual(again.groups.map((g) => [g.message, g.checked, g.locked]), [['b', false, true], ['a2', true, false]]);
+    // A locked group the user left ticked stays ticked; locks without `checked` (older shape) count as ticked.
+    const ticked = parsePlan(ai([]), scoped, { groups: [{ message: 'm', files: ['a.txt'] }] });
+    assert.equal(ticked.groups[0].checked, true);
   });
 });
