@@ -10,9 +10,12 @@
   let errorText = '';
   let pushAfter = false;
   let dragged = null;
+  let newFiles = new Set();
   let typed = new Map(); // message text not yet confirmed by the extension, per group id
 
   const post = (m) => vscode.postMessage(m);
+  // Edits, commit and regroup are tied to the plan revision they were made against.
+  const send = (m) => post(Object.assign({ revision: model.revision }, m));
   const fmt = (s, ...a) => s.replace(/\{(\d+)\}/g, (_, i) => String(a[Number(i)]));
   const S = (k) => (model && model.strings[k]) || '';
 
@@ -31,16 +34,6 @@
     return b;
   }
 
-  /** Messages as currently typed, even if the input's change event has not reached the extension yet. */
-  function currentPlan() {
-    const groups = model.plan.groups.map((g) => {
-      const input = root.querySelector('input[data-msg="' + g.id + '"]');
-      const message = input ? input.value : g.message;
-      return Object.assign({}, g, { message: message, locked: g.locked || message !== g.message });
-    });
-    return { groups: groups, unassigned: model.plan.unassigned };
-  }
-
   /** Files of a group in display order: each .meta right after its asset, indented. */
   function displayFiles(files) {
     const set = new Set(files);
@@ -56,13 +49,16 @@
   function fileRow(path, sub) {
     const row = el('div', 'file' + (sub ? ' sub-file' : ''));
     row.draggable = true;
+    row.addEventListener('dragend', () => {
+      dragged = null;
+    });
     row.addEventListener('dragstart', (e) => {
       dragged = path;
       e.dataTransfer.setData('text/plain', path);
       e.dataTransfer.effectAllowed = 'move';
     });
     row.appendChild(el('span', '', path));
-    if (model.newFiles.includes(path)) row.appendChild(el('span', 'tag', S('new')));
+    if (newFiles.has(path)) row.appendChild(el('span', 'tag', S('new')));
     return row;
   }
 
@@ -78,7 +74,7 @@
       card.classList.remove('over');
       const file = dragged;
       dragged = null;
-      if (file) post({ type: 'edit', edit: { kind: 'move', file: file, toGroupId: groupId } });
+      if (file) send({ type: 'edit', edit: { kind: 'move', file: file, toGroupId: groupId } });
     });
   }
 
@@ -91,14 +87,14 @@
     cb.checked = g.checked;
     cb.disabled = locked;
     cb.title = S('include');
-    cb.addEventListener('change', () => post({ type: 'edit', edit: { kind: 'toggle', groupId: g.id } }));
+    cb.addEventListener('change', () => send({ type: 'edit', edit: { kind: 'toggle', groupId: g.id } }));
     const input = el('input');
     input.type = 'text';
     input.value = typed.has(g.id) ? typed.get(g.id) : g.message;
     input.disabled = locked;
     input.setAttribute('data-msg', g.id);
     input.setAttribute('aria-label', S('messageLabel'));
-    input.addEventListener('change', () => post({ type: 'edit', edit: { kind: 'message', groupId: g.id, text: input.value } }));
+    input.addEventListener('change', () => send({ type: 'edit', edit: { kind: 'message', groupId: g.id, text: input.value } }));
     const move = el('span', 'move');
     for (const [glyph, delta, title, off] of [['↑', -1, S('moveUp'), i === 0], ['↓', 1, S('moveDown'), i === count - 1]]) {
       const b = el('button', '', glyph);
@@ -106,7 +102,7 @@
       b.title = title;
       b.setAttribute('aria-label', title);
       b.disabled = locked || off;
-      b.addEventListener('click', () => post({ type: 'edit', edit: { kind: 'reorder', groupId: g.id, delta: delta } }));
+      b.addEventListener('click', () => send({ type: 'edit', edit: { kind: 'reorder', groupId: g.id, delta: delta } }));
       move.appendChild(b);
     }
     head.append(cb, el('span', 'num', String(i + 1)), input, move);
@@ -178,16 +174,12 @@
     if (!result) {
       bar.appendChild(button(fmt(S('commitChecked'), checked), 'primary', () => {
         errorText = '';
-        post({ type: 'commit', plan: currentPlan(), pushAfter: pushAfter });
+        send({ type: 'commit', pushAfter: pushAfter });
       }, locked || model.stale || model.used || checked === 0));
     }
     bar.appendChild(button(S('regroup'), '', () => {
       errorText = '';
-      const p = currentPlan();
-      post({
-        type: 'regroup',
-        locks: { groups: p.groups.filter((g) => g.locked && g.files.length > 0).map((g) => ({ message: g.message, files: g.files })) },
-      });
+      send({ type: 'regroup' });
     }, locked));
     bar.appendChild(button(result ? S('close') : S('cancel'), '', () => post({ type: 'cancel' }), false));
     if (!result) {
@@ -221,6 +213,7 @@
         }
       }
       model = m;
+      newFiles = new Set(m.newFiles);
       if (!same) result = null;
       busyText = '';
       render();

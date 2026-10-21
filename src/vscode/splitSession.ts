@@ -13,7 +13,8 @@ export interface SplitHost extends PlannerEnv {
   readonly extensionUri: vscode.Uri;
   /** Runs `fn` under the per-repository busy guard (AI run or commit run, not the open tab). */
   guard(root: string, fn: () => Promise<void>): Promise<void>;
-  report(e: unknown): Promise<void>;
+  /** Shows the error to the user; `onText` receives the localized text first. Cancellation shows nothing. */
+  report(e: unknown, onText?: (text: string) => void): Promise<void>;
   pushFlow(root: string, repo: GitRepository): Promise<void>;
 }
 
@@ -21,7 +22,6 @@ export interface SplitHost extends PlannerEnv {
 export class SplitSession implements vscode.Disposable {
   private state: PlanState;
   private current: PlanResult;
-  private revision = 1;
   private working = false;
   private disposed = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -37,7 +37,7 @@ export class SplitSession implements vscode.Disposable {
     private readonly onClosed: () => void,
   ) {
     this.current = first;
-    this.state = { plan: first.plan, stale: false, used: false };
+    this.state = { plan: first.plan, stale: false, used: false, revision: 1 };
     this.decorations = new PlanDecorations(root);
     this.decorations.set(first.plan);
     this.watch = repo.state.onDidChange(() => this.scheduleCheck());
@@ -46,6 +46,8 @@ export class SplitSession implements vscode.Disposable {
       (raw) => void this.handle(raw),
       () => this.dispose(),
     );
+    // Changes made while the AI was running are already in the working tree.
+    void this.checkStale();
   }
 
   reveal(): void {
@@ -78,7 +80,7 @@ export class SplitSession implements vscode.Disposable {
       newFiles: scope.files.filter((f) => f.isNew).map((f) => f.path),
       stale: this.state.stale,
       used: this.state.used,
-      revision: this.revision,
+      revision: this.state.revision,
       strings: webviewStrings(),
     };
     this.panel.post(msg);
@@ -125,8 +127,7 @@ export class SplitSession implements vscode.Disposable {
       try {
         await job();
       } catch (e) {
-        await this.host.report(e);
-        this.panel.post({ type: 'error', text: vscode.l10n.t('CommitSmith hit an unexpected error') });
+        await this.host.report(e, (text) => this.panel.post({ type: 'error', text }));
       } finally {
         this.working = false;
       }
@@ -136,6 +137,13 @@ export class SplitSession implements vscode.Disposable {
   private async commit(pushAfter: boolean): Promise<void> {
     let ok = false;
     await this.run(vscode.l10n.t('Committing...'), async () => {
+      // Final check: the plan must still describe the working tree.
+      if (fingerprintOf(await readStatus(this.root)) !== this.current.fingerprint) {
+        this.state = { ...this.state, stale: true };
+        this.sendPlan();
+        this.panel.post({ type: 'error', text: vscode.l10n.t('Changes changed since this plan — Regroup before committing') });
+        return;
+      }
       const groups = toCommitGroups(this.state.plan, this.current.scope.files);
       const result = await commitGroups(this.root, this.current.scope.kind, groups);
       await this.repo.status();
@@ -153,11 +161,12 @@ export class SplitSession implements vscode.Disposable {
     });
     if (fresh) {
       this.current = fresh;
-      this.revision++;
-      this.state = { plan: fresh.plan, stale: false, used: false };
+      this.state = { plan: fresh.plan, stale: false, used: false, revision: this.state.revision + 1 };
       this.decorations.set(fresh.plan);
     }
-    if (!this.disposed) this.sendPlan();
+    if (this.disposed) return;
+    this.sendPlan();
+    if (fresh) void this.checkStale();
   }
 
   private scheduleCheck(): void {

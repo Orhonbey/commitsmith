@@ -65,7 +65,7 @@ export class PlanPanel implements vscode.Disposable {
     const js = web.asWebviewUri(vscode.Uri.joinPath(media, 'plan.js'));
     const csp = `default-src 'none'; style-src ${web.cspSource}; script-src 'nonce-${nonce}';`;
     return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${vscode.env.language}">
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">

@@ -18,7 +18,8 @@ import { ToolPicker } from './statusBar';
 export class CommitSmithCommands implements vscode.Disposable, SplitHost {
   private readonly busy = new Set<string>();
   private readonly log = vscode.window.createOutputChannel('CommitSmith');
-  private session: SplitSession | undefined;
+  /** One plan tab per repository. */
+  private readonly sessions = new Map<string, SplitSession>();
 
   constructor(
     readonly picker: ToolPicker,
@@ -26,7 +27,7 @@ export class CommitSmithCommands implements vscode.Disposable, SplitHost {
   ) {}
 
   dispose(): void {
-    this.session?.dispose();
+    for (const s of [...this.sessions.values()]) s.dispose();
     this.log.dispose();
   }
 
@@ -67,16 +68,17 @@ export class CommitSmithCommands implements vscode.Disposable, SplitHost {
   }
 
   /** Shows a localized error; `detail` (English CLI/git output) only goes to the log. */
-  private async fail(text: string, detail: string): Promise<void> {
+  private async fail(text: string, detail: string, onText?: (text: string) => void): Promise<void> {
     if (detail) this.log.appendLine(detail);
+    onText?.(text);
     const show = vscode.l10n.t('Show log');
     if ((await vscode.window.showErrorMessage(text, show)) === show) this.log.show(true);
   }
 
-  async report(e: unknown): Promise<void> {
+  async report(e: unknown, onText?: (text: string) => void): Promise<void> {
     if (e instanceof AiError) {
       if (e.kind === 'cancelled') return;
-      if (e.kind === 'notFound') return this.reportMissing(this.picker.current()?.tool.displayName ?? 'AI');
+      if (e.kind === 'notFound') return this.reportMissing(this.picker.current()?.tool.displayName ?? 'AI', onText);
       const detail = [`${e.kind}: ${e.message}`, e.stderrTail].filter(Boolean).join('\n');
       let text: string;
       if (e.kind === 'timeout') {
@@ -86,23 +88,26 @@ export class CommitSmithCommands implements vscode.Disposable, SplitHost {
       } else {
         text = vscode.l10n.t('The AI returned an answer CommitSmith could not read');
       }
-      return this.fail(text, detail);
+      return this.fail(text, detail, onText);
     }
     if (e instanceof PlanError) {
-      return this.fail(vscode.l10n.t('The AI could not produce a usable commit plan. The log has details'), e.message);
+      return this.fail(vscode.l10n.t('The AI could not produce a usable commit plan. The log has details'), e.message, onText);
     }
     if (e instanceof GitError) {
-      return this.fail(vscode.l10n.t('A git command failed'), e.stderr.trim() || e.message);
+      return this.fail(vscode.l10n.t('A git command failed'), e.stderr.trim() || e.message, onText);
     }
     return this.fail(
       vscode.l10n.t('CommitSmith hit an unexpected error'),
       e instanceof Error ? e.stack ?? e.message : String(e),
+      onText,
     );
   }
 
-  async reportMissing(name: string): Promise<void> {
+  async reportMissing(name: string, onText?: (text: string) => void): Promise<void> {
     const another = vscode.l10n.t('Pick another');
-    if ((await vscode.window.showErrorMessage(vscode.l10n.t('{0} was not found', name), another)) === another) {
+    const text = vscode.l10n.t('{0} was not found', name);
+    onText?.(text);
+    if ((await vscode.window.showErrorMessage(text, another)) === another) {
       await this.pickModel();
     }
   }
@@ -204,25 +209,30 @@ export class CommitSmithCommands implements vscode.Disposable, SplitHost {
     }
   }
 
-  /** Opens the plan tab (re-focuses it if open). The busy guard covers only the AI run, not the open tab. */
+  /** Opens the plan tab (re-focuses that repository's tab if open). The busy guard covers only the AI run. */
   smartSplit = async (arg?: unknown): Promise<void> => {
-    if (this.session) {
-      this.session.reveal();
+    const found = await getRepository(arg);
+    if (!found) return;
+    const open = this.sessions.get(found.root);
+    if (open) {
+      open.reveal();
       return;
     }
-    await this.withRepo(arg, async (root, repo) => {
-      const first = await makePlan(this, root);
+    await this.guard(found.root, async () => {
+      const first = await makePlan(this, found.root);
       if (!first) return;
-      this.session = new SplitSession(this, root, repo, first, () => {
-        this.session = undefined;
+      const session: SplitSession = new SplitSession(this, found.root, found.repo, first, () => {
+        if (this.sessions.get(found.root) === session) this.sessions.delete(found.root);
       });
+      this.sessions.set(found.root, session);
     });
   };
 
   /** Extension tests only: drives the open plan tab without a webview. */
   async testPlanTab(arg: { action: 'state' } | { action: 'message'; message: unknown }): Promise<unknown> {
-    if (arg.action === 'message') await this.session?.handle(arg.message);
-    return this.session?.snapshot();
+    const session = [...this.sessions.values()][0];
+    if (arg.action === 'message') await session?.handle(arg.message);
+    return session?.snapshot();
   }
 
   push = (arg?: unknown) => this.withRepo(arg, (root, repo) => this.pushFlow(root, repo));

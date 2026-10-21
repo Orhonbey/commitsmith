@@ -1,7 +1,7 @@
 // Runs inside the VS Code extension host (see runTest.ts).
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
 
@@ -57,19 +57,27 @@ export async function run(): Promise<void> {
   assert.deepEqual(held.plan.groups.map((g: any) => g.files), [['b.txt'], ['a.txt', 'c.txt']]);
   assert.equal(gitOut('log', '--format=%s'), 'init', 'opening the plan commits nothing');
 
-  // A forged message (a file that is not in the plan) is ignored.
-  const forged = JSON.parse(JSON.stringify(held.plan));
-  forged.groups[0].files.push('../outside.txt');
-  await vscode.commands.executeCommand('commitsmith.test.planTab', {
-    action: 'message',
-    message: { type: 'commit', plan: forged, pushAfter: false },
-  });
-  assert.equal(gitOut('log', '--format=%s'), 'init', 'a forged commit message does nothing');
+  const planTab = (message?: unknown): Thenable<any> =>
+    vscode.commands.executeCommand('commitsmith.test.planTab', message ? { action: 'message', message } : { action: 'state' });
 
-  const after: any = await vscode.commands.executeCommand('commitsmith.test.planTab', {
-    action: 'message',
-    message: { type: 'commit', plan: held.plan, pushAfter: false },
-  });
+  // A commit built against another plan revision is ignored.
+  await planTab({ type: 'commit', revision: held.revision + 1, pushAfter: false });
+  assert.equal(gitOut('log', '--format=%s'), 'init', 'a commit with a stale revision does nothing');
+
+  // A change made after the plan was made marks it stale, and undoing it clears the mark.
+  const untilStale = async (want: boolean) => {
+    for (let i = 0; i < 100 && (await planTab()).stale !== want; i++) await new Promise((r) => setTimeout(r, 100));
+    assert.equal((await planTab()).stale, want, 'stale should be ' + want);
+  };
+  assert.equal(held.stale, false);
+  writeFileSync(join(repoPath, 'd.txt'), 'dee');
+  await untilStale(true);
+  await planTab({ type: 'commit', revision: held.revision, pushAfter: false });
+  assert.equal(gitOut('log', '--format=%s'), 'init', 'a stale plan cannot be committed');
+  unlinkSync(join(repoPath, 'd.txt'));
+  await untilStale(false);
+
+  const after: any = await planTab({ type: 'commit', revision: held.revision, pushAfter: false });
   assert.equal(after.used, true);
   assert.deepEqual(gitOut('log', '--format=%s', '-3').split(/\r?\n/), ['fix: a and c', 'feat: add b', 'init'], 'commits are created in the shown order');
   assert.equal(gitOut('status', '--porcelain'), '', 'everything was committed');
