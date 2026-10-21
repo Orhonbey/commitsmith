@@ -6,6 +6,7 @@
   const root = document.getElementById('app');
   let model = null; // last `plan` message
   let result = null;
+  let failedText = ''; // localized by the extension; git's raw output stays in the log
   let busyText = '';
   let errorText = '';
   let pushAfter = false;
@@ -78,6 +79,12 @@
     });
   }
 
+  /** Fits a message textarea to its content. */
+  function grow(ta) {
+    ta.style.height = 'auto';
+    ta.style.height = ta.scrollHeight + (ta.offsetHeight - ta.clientHeight) + 'px';
+  }
+
   function groupCard(g, i, count, locked) {
     const card = el('div', 'card' + (g.checked ? '' : ' off'));
     dropTarget(card, g.id);
@@ -88,13 +95,22 @@
     cb.disabled = locked;
     cb.title = S('include');
     cb.addEventListener('change', () => send({ type: 'edit', edit: { kind: 'toggle', groupId: g.id } }));
-    const input = el('input');
-    input.type = 'text';
+    // A textarea: commit messages have a subject, a blank line and a body.
+    const input = el('textarea', 'msg');
+    input.rows = 1;
     input.value = typed.has(g.id) ? typed.get(g.id) : g.message;
     input.disabled = locked;
     input.setAttribute('data-msg', g.id);
     input.setAttribute('aria-label', S('messageLabel'));
+    // Posted on blur (change), as before; Ctrl+Enter / Cmd+Enter finishes the edit.
     input.addEventListener('change', () => send({ type: 'edit', edit: { kind: 'message', groupId: g.id, text: input.value } }));
+    input.addEventListener('input', () => grow(input));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        input.blur();
+      }
+    });
     const move = el('span', 'move');
     for (const [glyph, delta, title, off] of [['↑', -1, S('moveUp'), i === 0], ['↓', 1, S('moveDown'), i === count - 1]]) {
       const b = el('button', '', glyph);
@@ -129,7 +145,7 @@
     if (result.failed) {
       const r = el('div', 'result failed');
       r.appendChild(el('div', '', fmt(S('failed'), result.failed.message)));
-      r.appendChild(el('div', 'error', result.failed.error));
+      if (failedText) r.appendChild(el('div', 'error', failedText));
       frag.appendChild(r);
     }
     return frag;
@@ -139,6 +155,7 @@
     // Keep keyboard focus across re-renders (the extension re-posts the plan after each edit).
     const active = document.activeElement;
     const focusId = active && active.getAttribute ? active.getAttribute('data-msg') : null;
+    const caret = focusId ? [active.selectionStart, active.selectionEnd] : null;
     root.replaceChildren();
     if (!model) return;
     const locked = busyText !== '';
@@ -194,9 +211,13 @@
     root.appendChild(bar);
     if (!result) root.appendChild(el('div', 'hint', S('hint')));
 
+    root.querySelectorAll('textarea[data-msg]').forEach(grow);
     if (focusId) {
-      const again = root.querySelector('input[data-msg="' + focusId + '"]');
-      if (again) again.focus();
+      const again = root.querySelector('textarea[data-msg="' + focusId + '"]');
+      if (again) {
+        again.focus();
+        again.setSelectionRange(caret[0], caret[1]);
+      }
     }
   }
 
@@ -208,7 +229,7 @@
       typed = new Map();
       if (same) {
         for (const g of model.plan.groups) {
-          const input = root.querySelector('input[data-msg="' + g.id + '"]');
+          const input = root.querySelector('textarea[data-msg="' + g.id + '"]');
           if (input && input.value !== g.message) typed.set(g.id, input.value);
         }
       }
@@ -223,6 +244,7 @@
       render();
     } else if (m.type === 'result') {
       result = m.result;
+      failedText = typeof m.failedText === 'string' ? m.failedText : '';
       busyText = '';
       render();
     } else if (m.type === 'error') {
