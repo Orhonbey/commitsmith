@@ -1,4 +1,5 @@
-import { readFile, stat } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { open, readFile, stat } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { runGit } from './gitRunner';
 import type { Scope, ScopedFile } from './scope';
@@ -69,6 +70,35 @@ function parseNumstat(out: string): Map<string, Numstat> {
   return map;
 }
 
+async function readHead(file: string): Promise<Buffer> {
+  try {
+    const fh = await open(file, 'r');
+    try {
+      const buf = Buffer.alloc(8000);
+      const { bytesRead } = await fh.read(buf, 0, 8000, 0);
+      return buf.subarray(0, bytesRead);
+    } finally {
+      await fh.close();
+    }
+  } catch {
+    return Buffer.alloc(0);
+  }
+}
+
+async function countLines(file: string): Promise<number> {
+  let lines = 0;
+  let last = 10;
+  try {
+    for await (const chunk of createReadStream(file) as AsyncIterable<Buffer>) {
+      for (const byte of chunk) if (byte === 10) lines++;
+      last = chunk[chunk.length - 1];
+    }
+  } catch {
+    return 0;
+  }
+  return last === 10 ? lines : lines + 1;
+}
+
 function looksBinary(buf: Buffer): boolean {
   return buf.subarray(0, 8000).includes(0);
 }
@@ -116,15 +146,14 @@ export async function collectDiff(root: string, scope: Scope, opts: DiffOptions)
     const sizeBytes = await sizeOf(root, f.path, f.change);
     const common = { path: f.path, origPath: f.origPath, change: f.change, isNew: f.isNew, sizeBytes };
     if (isUntracked(f)) {
-      let buf: Buffer;
-      try {
-        buf = await readFile(join(root, f.path));
-      } catch {
-        buf = Buffer.alloc(0);
-      }
-      if (looksBinary(buf)) {
+      const head = await readHead(join(root, f.path));
+      if (looksBinary(head)) {
         out.push({ ...common, binary: true, added: 0, removed: 0, summarized: true });
+      } else if (summaryExt.has(extname(f.path).toLowerCase()) || sizeBytes > opts.maxFileDiffBytes) {
+        // No body in memory: just stream-count the lines for the summary.
+        out.push({ ...common, binary: false, added: await countLines(join(root, f.path)), removed: 0, summarized: true });
       } else {
+        const buf = await readFile(join(root, f.path)).catch(() => Buffer.alloc(0));
         const { patch, lines } = newFilePatch(f.path, buf.toString('utf8'));
         out.push({ ...common, binary: false, added: lines, removed: 0, patch, summarized: false });
       }

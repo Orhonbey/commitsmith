@@ -170,4 +170,20 @@ describe('diffCollector', () => {
     assert.ok(d.patch!.includes('+b'));
     assert.ok(d.patch!.includes('diff --git a/a.txt b/a.txt'));
   });
+
+  it('untracked summary-only extensions get no patch', async () => {
+    repo = await createTempRepo({ 'a.txt': 'a\n' });
+    repo.write('New.asset', 'x\ny\n');
+    repo.write('New.cs.meta', 'guid: 1\n');
+    repo.write('New.cs', 'class N {}\n');
+    const scope = resolveScope(await readStatus(repo.root), { includeUntracked: true });
+    const out = await collectDiff(repo.root, scope, DEFAULT_DIFF_OPTIONS);
+    const by = (p: string) => out.find((f) => f.path === p)!;
+    assert.equal(by('New.asset').patch, undefined);
+    assert.equal(by('New.asset').summarized, true);
+    assert.equal(by('New.asset').added, 2);
+    assert.equal(by('New.cs.meta').patch, undefined);
+    assert.equal(by('New.cs.meta').summarized, true);
+    assert.ok(by('New.cs').patch!.includes('+class N {}'));
+  });
 });
