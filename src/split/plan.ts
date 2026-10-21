@@ -54,14 +54,18 @@ export function parsePlan(json: string, scoped: ScopedFile[], locks?: PlanLocks)
 
   for (const g of rawGroups as RawGroup[]) {
     const files: string[] = [];
+    const inGroup = new Set<string>();
     for (const f of Array.isArray(g?.files) ? (g.files as unknown[]) : []) {
       const p = typeof f === 'string' ? canon(f) : undefined;
       if (p === undefined) {
         if (!unknown.includes(String(f))) unknown.push(String(f));
+      } else if (inGroup.has(p)) {
+        // same file named twice in one group (e.g. a rename by new and old path): harmless
       } else if (seen.has(p)) {
         if (!dupes.includes(p)) dupes.push(p);
       } else {
         seen.add(p);
+        inGroup.add(p);
         files.push(p);
       }
     }
@@ -79,11 +83,17 @@ export function parsePlan(json: string, scoped: ScopedFile[], locks?: PlanLocks)
     throw new PlanError(`The AI plan is invalid (${parts.join('; ')}).`, unknown, dupes);
   }
 
-  const lockedGroups = (locks?.groups ?? []).map((g) => ({
-    message: g.message,
-    files: g.files.map(canon).filter((p): p is string => p !== undefined),
-  }));
-  const lockedSet = new Set(lockedGroups.flatMap((g) => g.files));
+  const lockedSet = new Set<string>();
+  const lockedGroups = (locks?.groups ?? [])
+    .map((g) => ({
+      message: g.message,
+      files: [...new Set(g.files.map(canon).filter((p): p is string => p !== undefined))].filter((p) => {
+        if (lockedSet.has(p)) return false; // first locked group wins
+        lockedSet.add(p);
+        return true;
+      }),
+    }))
+    .filter((g) => g.files.length > 0);
 
   const groups: PlanGroup[] = [];
   const push = (g: Omit<PlanGroup, 'id' | 'checked'>) =>
@@ -102,34 +112,38 @@ export function parsePlan(json: string, scoped: ScopedFile[], locks?: PlanLocks)
 
 /** Keeps each .meta in the same group as its asset (a locked side wins; an unassigned asset follows its .meta). */
 export function pairCompanions(plan: SplitPlan, scoped: ScopedFile[]): SplitPlan {
-  const groups = plan.groups.map((g) => ({ ...g, files: [...g.files] }));
-  let unassigned = [...plan.unassigned];
+  const sets = plan.groups.map((g) => new Set(g.files));
+  const unassigned = new Set(plan.unassigned);
+  const loc = new Map<string, number>(); // path -> group index, -1 = unassigned
+  plan.unassigned.forEach((p) => loc.set(p, -1));
+  sets.forEach((set, i) => set.forEach((p) => loc.set(p, i)));
   const inScope = new Set(scoped.map((f) => f.path));
-  const where = (p: string) => (unassigned.includes(p) ? -1 : groups.findIndex((g) => g.files.includes(p)));
   const move = (p: string, to: number) => {
-    const from = where(p);
+    const from = loc.get(p) ?? -1;
     if (from === to) return;
-    if (from === -1) unassigned = unassigned.filter((u) => u !== p);
-    else groups[from].files = groups[from].files.filter((f) => f !== p);
-    if (to === -1) unassigned.push(p);
-    else groups[to].files.push(p);
+    if (from === -1) unassigned.delete(p);
+    else sets[from].delete(p);
+    if (to === -1) unassigned.add(p);
+    else sets[to].add(p);
+    loc.set(p, to);
   };
 
   for (const f of scoped) {
     if (!f.path.endsWith('.meta')) continue;
     const base = f.path.slice(0, -'.meta'.length);
     if (!inScope.has(base)) continue;
-    const mi = where(f.path);
-    const bi = where(base);
+    const mi = loc.get(f.path) ?? -1;
+    const bi = loc.get(base) ?? -1;
     if (mi === bi) continue;
-    const metaLocked = mi >= 0 && groups[mi].locked;
-    const baseLocked = bi >= 0 && groups[bi].locked;
+    const metaLocked = mi >= 0 && plan.groups[mi].locked;
+    const baseLocked = bi >= 0 && plan.groups[bi].locked;
     if (metaLocked && baseLocked) continue;
     // A locked side keeps its file; otherwise the .meta follows its asset, unless the asset is unassigned.
     if (metaLocked || (bi === -1 && mi >= 0 && !baseLocked)) move(base, mi);
     else move(f.path, bi);
   }
-  return { groups: groups.filter((g) => g.files.length > 0 || g.locked), unassigned };
+  const groups = plan.groups.map((g, i) => ({ ...g, files: [...sets[i]] })).filter((g) => g.files.length > 0);
+  return { groups, unassigned: [...unassigned] };
 }
 
 // ---- output ----------------------------------------------------------------
@@ -137,7 +151,7 @@ export function pairCompanions(plan: SplitPlan, scoped: ScopedFile[]): SplitPlan
 export function toCommitGroups(plan: SplitPlan, scoped: ScopedFile[]): CommitGroup[] {
   const orig = new Map(scoped.filter((f) => f.origPath).map((f) => [f.path, f.origPath as string]));
   return plan.groups
-    .filter((g) => g.checked)
+    .filter((g) => g.checked && g.files.length > 0)
     .map((g) => {
       const paths = [...g.files];
       for (const p of g.files) {
