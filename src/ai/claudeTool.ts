@@ -47,7 +47,7 @@ export function createClaudeTool(env: { exeOverride?: string } = {}): AiTool {
         '--strict-mcp-config',
         '--no-session-persistence',
         '--setting-sources',
-        'project',
+        '', // no settings sources: a repo's own .claude/settings.json (hooks) must never run
       ];
       if (opts.jsonSchema) args.push('--json-schema', JSON.stringify(opts.jsonSchema));
       const { stdout } = await execCli(exe, args, prompt, opts);

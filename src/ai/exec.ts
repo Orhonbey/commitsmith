@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { delimiter, join } from 'node:path';
+import { delimiter, isAbsolute, join } from 'node:path';
 import { AiError } from './types';
 
 const MAX_BUFFER = 64 * 1024 * 1024;
@@ -12,6 +12,11 @@ export interface ExecOptions {
 }
 
 const isWin = process.platform === 'win32';
+
+/** Absolute path in System32, so the child's cwd (the user's repo) can never shadow it. */
+function systemExe(name: string): string {
+  return join(process.env.SystemRoot || process.env.windir || 'C:/Windows', 'System32', name);
+}
 
 /** Quote one argument for a `.cmd` shim run through `cmd.exe /d /s /c` (escaped twice: cmd re-parses `%*`). */
 function quoteForCmd(arg: string): string {
@@ -26,7 +31,7 @@ const escMeta = (s: string) => s.replace(/[()%!^"<>&|;, ]/g, '^$&');
 function killTree(pid: number | undefined, useGroup: boolean): void {
   if (pid === undefined) return;
   if (isWin) {
-    spawnSync('taskkill', ['/T', '/F', '/PID', String(pid)], { windowsHide: true, stdio: 'ignore' });
+    spawnSync(systemExe('taskkill.exe'), ['/T', '/F', '/PID', String(pid)], { windowsHide: true, stdio: 'ignore' });
     return;
   }
   try {
@@ -50,7 +55,7 @@ export function execCli(
     const viaCmd = isWin && /\.(cmd|bat)$/i.test(exe);
     const child = viaCmd
       ? spawn(
-          process.env.ComSpec || 'cmd.exe',
+          process.env.ComSpec || systemExe('cmd.exe'),
           ['/d', '/s', '/c', `"${[escMeta(exe), ...args.map(quoteForCmd)].join(' ')}"`],
           { cwd: opts.cwd, windowsHide: true, windowsVerbatimArguments: true },
         )
@@ -119,7 +124,7 @@ export function execCli(
 
 /** Find an executable on PATH (honours PATHEXT on Windows). */
 export function findOnPath(name: string): string | undefined {
-  const dirs = (process.env.PATH ?? process.env.Path ?? '').split(delimiter).filter(Boolean);
+  const dirs = (process.env.PATH ?? process.env.Path ?? '').split(delimiter).filter((d) => d && isAbsolute(d));
   const exts = isWin ? ['.exe', '.cmd', '.bat', ''] : [''];
   for (const d of dirs) {
     for (const e of exts) {

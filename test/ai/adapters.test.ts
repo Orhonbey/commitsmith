@@ -6,6 +6,7 @@ import { createClaudeTool } from '../../src/ai/claudeTool';
 import { createCodexTool } from '../../src/ai/codexTool';
 import { detectTools } from '../../src/ai/registry';
 import { AiError } from '../../src/ai/types';
+import { findOnPath } from '../../src/ai/exec';
 import { SPLIT_SCHEMA } from '../../src/prompt/prompts';
 
 const FAKE = resolve(__dirname, '../fixtures/fake-ai.mjs');
@@ -56,6 +57,11 @@ describe('ai adapters', () => {
     assert.equal(args[args.indexOf('--tools') + 1], '');
     assert.ok(args.includes('--strict-mcp-config'));
     assert.ok(!args.includes('--bare'));
+    // a repo's own .claude/settings.json (hooks) must never be loaded
+    const i = args.indexOf('--setting-sources');
+    assert.ok(i >= 0);
+    assert.equal(args[i + 1], '');
+    assert.ok(!args.includes('project'));
   });
 
   it('claude passes a real schema intact through the shell shim', async () => {
@@ -163,6 +169,19 @@ describe('ai adapters', () => {
     const pre = new AbortController();
     pre.abort();
     await assert.rejects(createClaudeTool({ exeOverride: shim }).run('p', runOpts({ signal: pre.signal })), /Cancelled/);
+  });
+
+  it('findOnPath ignores relative PATH entries', () => {
+    const name = process.platform === 'win32' ? 'zz-relative.cmd' : 'zz-relative';
+    writeFileSync(join(dir, name), '');
+    const old = process.cwd();
+    setEnv('PATH', '.' + require('node:path').delimiter + (process.env.PATH ?? ''));
+    process.chdir(dir);
+    try {
+      assert.equal(findOnPath('zz-relative'), undefined);
+    } finally {
+      process.chdir(old);
+    }
   });
 
   it('detect returns undefined for missing exe, path for present', async () => {

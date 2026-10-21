@@ -31,10 +31,15 @@ function installedCandidates(): string[] {
 }
 
 export function createCodexTool(env: { exeOverride?: string; codexHome?: string } = {}): AiTool {
+  // Version probing spawns one process per install; do it once per tool instance.
+  let installed: Promise<string | undefined> | undefined;
   const detect = async (): Promise<string | undefined> => {
     if (env.exeOverride !== undefined) return existsSync(env.exeOverride) ? env.exeOverride : undefined;
     const onPath = findOnPath('codex');
     if (onPath) return onPath;
+    return (installed ??= pickInstalled());
+  };
+  const pickInstalled = async (): Promise<string | undefined> => {
     const found = installedCandidates();
     if (found.length <= 1) return found[0];
     const versions = await Promise.all(
