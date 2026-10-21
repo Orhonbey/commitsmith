@@ -128,4 +128,50 @@ describe('push', () => {
     await commit('c.txt');
     await assert.rejects(runPush(repo.root, { kind: 'push' }, 'main'), { name: 'GitError' });
   });
+
+  it('new branch with no commits ahead and no upstream -> setUpstream', async () => {
+    await withOrigin();
+    await repo.git('checkout', '-b', 'fresh');
+    const i = await readPushInfo(repo.root);
+    assert.equal(i.upstream, undefined);
+    assert.equal(i.ahead, 0);
+    assert.deepEqual(decidePush(i), { kind: 'setUpstream', remote: 'origin' });
+  });
+
+  it('non-fast-forward rejection throws GitError mentioning the rejection', async () => {
+    await withOrigin();
+    const other = await createTempRepo();
+    try {
+      await other.git('remote', 'add', 'origin', bare);
+      await other.git('pull', 'origin', 'main');
+      other.write('x.txt', 'x\n');
+      await other.git('add', '-A');
+      await other.git('commit', '-m', 'x');
+      await other.git('push', 'origin', 'main');
+    } finally {
+      await other.cleanup();
+    }
+    await commit('b.txt');
+    await assert.rejects(runPush(repo.root, { kind: 'push' }, 'main'), (e: Error & { stderr?: string }) => {
+      assert.equal(e.name, 'GitError');
+      assert.match(e.stderr ?? '', /rejected|non-fast-forward|fetch first/);
+      return true;
+    });
+  });
+
+  it('default branch with a slash comes from origin/HEAD', async () => {
+    await withOrigin();
+    await repo.git('push', 'origin', 'main:feature/x');
+    await repo.git('fetch', 'origin');
+    await repo.git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/feature/x');
+    assert.equal((await readPushInfo(repo.root)).defaultBranch, 'feature/x');
+  });
+
+  it('without origin the first remote decides the default branch', async () => {
+    await repo.git('remote', 'add', 'upstream', bare);
+    await repo.git('push', 'upstream', 'main:trunk');
+    await repo.git('fetch', 'upstream');
+    await repo.git('symbolic-ref', 'refs/remotes/upstream/HEAD', 'refs/remotes/upstream/trunk');
+    assert.equal((await readPushInfo(repo.root)).defaultBranch, 'trunk');
+  });
 });
