@@ -2,7 +2,7 @@
 
 Write git commit messages with the AI command-line tools you already have installed (**Claude Code** or **Codex**), commit, split a messy working tree into several approved commits, and push, all from VS Code's Source Control panel. No API key is needed: CommitSmith uses the CLI's own login.
 
-**Status:** v0.2.0, not yet on the Marketplace. Build it from source (see Development).
+**Status:** v0.3.0, not yet on the Marketplace. Build it from source (see Development).
 
 <!-- Screenshots: add media/screenshots/*.png here before publishing. -->
 
@@ -21,14 +21,15 @@ Four buttons appear in the title bar of the Source Control panel (and in the Com
 
 ## Activity Bar panel
 
-The CommitSmith icon in the Activity Bar opens a small panel. It is an extra entry point; the Source Control buttons and the status-bar picker work as before.
+The CommitSmith icon in the Activity Bar opens a panel that looks like VS Code's Source Control view, with the CommitSmith actions on top. The Source Control title-bar buttons and the status-bar picker work as before.
 
-- **AI:** the current tool and model, and which tools were found. Click it to choose another.
-- **Repository:** a drop-down when more than one repository is open; every action applies to the selected one.
-- **What will be looked at:** two read-only chips, *Staged (n)* and *All (n)*. The highlighted one is what the scope rule uses (staged wins when anything is staged), plus a line for new files that are left out.
-- **Write message, Write + Commit, Smart split, Push:** the same actions as the Source Control buttons. They are disabled while CommitSmith is working on that repository.
-- **Push line:** the upstream and how many commits are waiting to be pushed.
-- **Recent:** the last 5 CommitSmith actions of this VS Code session (kept in memory only).
+- **AI:** the current tool and model. Click it to choose another; the tooltip shows which tools were found.
+- **Repository:** a drop-down when more than one repository is open; everything below applies to the selected one.
+- **Commit message box:** the same message as the Source Control commit box. Type in either one, or let *Write message* fill it.
+- **Write message, Write + Commit, Smart split, Push:** the same actions as the Source Control buttons. Push shows how many commits are waiting. They are disabled while CommitSmith is working on that repository.
+- **Info line:** what the next action looks at (*Staged* when anything is staged, otherwise *All changes*), the branch and its upstream, and how many commits are waiting to be pushed.
+- **Changes:** your files in three groups: **Staged Changes**, **Changes** and **New Files** (new files carry the note "not included in Write + Commit" unless `commitsmith.includeUntracked` is on or something is staged). Click a file to open the same diff Source Control opens. Hover a file for inline actions: Stage / Unstage, Discard changes, Open file. Groups have Stage all, Unstage all and Discard all. Right-click adds Copy relative path. Discard asks first every time and is only offered for tracked files, never for new files. A group shows at most 500 files, then "… n more files".
+- **Recent:** the last 5 CommitSmith actions of this VS Code session (kept in memory only). Click a commit to copy its id.
 
 ## Which changes are used
 
@@ -105,7 +106,7 @@ Manual check (in an Extension Development Host, on a throwaway git repo):
 
 ## Türkçe özet
 
-CommitSmith, bilgisayarında kurulu Claude Code veya Codex komut satırı araçlarıyla commit mesajı yazar. API anahtarı gerekmez; aracın kendi girişi kullanılır. Kaynak Denetimi panelindeki dört düğme: mesaj yaz, mesaj yaz ve commit et, akıllı bölme (değişiklikleri onayına sunulan birkaç commit'e ayırır) ve push. Dosya hazırlandıysa (staged) yalnızca onlar, değilse tüm değişiklikler kullanılır. Yeni dosyalar `commitsmith.includeUntracked` açık değilse atlanır; akıllı bölme her zaman dahil eder. Varsayılan dala push etmeden önce sorulur. Fark (diff), seçtiğin aracın sağlayıcısına kendi hesabınla gönderilir; ikili ve çok büyük dosyaların yalnızca adı ve boyutu gider. Güvenilmeyen çalışma alanlarında devre dışıdır. Türkçe arayüz hazırdır. Etkinlik Çubuğundaki CommitSmith simgesi, aynı eylemleri, hangi değişikliklerin kullanılacağını, push durumunu ve son işlemleri gösteren küçük bir panel açar.
+CommitSmith, bilgisayarında kurulu Claude Code veya Codex komut satırı araçlarıyla commit mesajı yazar. API anahtarı gerekmez; aracın kendi girişi kullanılır. Kaynak Denetimi panelindeki dört düğme: mesaj yaz, mesaj yaz ve commit et, akıllı bölme (değişiklikleri onayına sunulan birkaç commit'e ayırır) ve push. Dosya hazırlandıysa (staged) yalnızca onlar, değilse tüm değişiklikler kullanılır. Yeni dosyalar `commitsmith.includeUntracked` açık değilse atlanır; akıllı bölme her zaman dahil eder. Varsayılan dala push etmeden önce sorulur. Fark (diff), seçtiğin aracın sağlayıcısına kendi hesabınla gönderilir; ikili ve çok büyük dosyaların yalnızca adı ve boyutu gider. Güvenilmeyen çalışma alanlarında devre dışıdır. Türkçe arayüz hazırdır. Etkinlik Çubuğundaki CommitSmith simgesi, Kaynak Denetimi görünümüne benzeyen bir panel açar: commit mesajı kutusu, dört eylem, değişen dosyalar (Stage'dekiler, Değişenler, Yeni dosyalar; dosyaya tıklayınca fark açılır, satırda stage / stage'den çıkar / at düğmeleri) ve son işlemler. "At" her zaman önce sorar ve yeni dosyalarda sunulmaz.
 
 ## License
 

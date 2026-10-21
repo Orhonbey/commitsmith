@@ -1,0 +1,87 @@
+<style>
+  .vs { background:#181818; color:#cccccc; font-family:"Segoe UI",system-ui,sans-serif; font-size:13px; border-radius:8px; overflow:hidden; border:1px solid #2b2b2b; }
+  .row { display:flex; min-height:560px; }
+  .act { width:44px; border-right:1px solid #2b2b2b; display:flex; flex-direction:column; align-items:center; padding-top:10px; gap:18px; color:#858585; font-size:18px; }
+  .act .on { color:#d7a3ff; border-left:2px solid #d7a3ff; padding-left:8px; margin-left:-10px; }
+  .side { width:330px; flex-shrink:0; border-right:1px solid #2b2b2b; }
+  .main { flex:1; background:#1f1f1f; color:#777; font-family:Consolas,monospace; font-size:12px; padding:14px; }
+  .sec { display:flex; justify-content:space-between; align-items:center; padding:6px 10px; font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#bbb; }
+  .icons { display:flex; gap:3px; }
+  .ic { width:22px; height:20px; display:flex; align-items:center; justify-content:center; border-radius:4px; font-size:12px; color:#ccc; }
+  .ic.ai { color:#d7a3ff; }
+  .ai-row { margin:0 10px 6px; padding:4px 8px; border-radius:4px; background:#2a2140; color:#e5ccff; font-size:12px; display:flex; justify-content:space-between; }
+  .box { margin:0 10px 6px; background:#313131; border:1px solid #3c3c3c; border-radius:4px; padding:6px 8px; min-height:48px; font-family:Consolas,monospace; font-size:12px; color:#e6e6e6; }
+  .box .ph { color:#777; }
+  .btns { display:flex; gap:4px; margin:0 10px 4px; }
+  .btn { flex:1; text-align:center; padding:5px 2px; border-radius:3px; font-size:12px; }
+  .pri { background:#0078d4; color:#fff; }
+  .aib { background:#2a2140; border:1px solid #5b3e8a; color:#e5ccff; }
+  .sub { background:#2d2d2d; border:1px solid #3c3c3c; }
+  .info { margin:2px 10px 8px; font-size:11px; color:#999; }
+  .grp { display:flex; justify-content:space-between; align-items:center; padding:3px 10px; font-size:11px; font-weight:700; color:#ccc; }
+  .grp .cnt { background:#3a3a3a; border-radius:9px; padding:0 6px; font-weight:400; }
+  .f { display:flex; align-items:center; padding:2px 10px 2px 22px; gap:6px; }
+  .f:hover, .f.hov { background:#2a2d2e; }
+  .f .ico { width:14px; font-size:11px; text-align:center; }
+  .f .name { white-space:nowrap; }
+  .f .dir { color:#8b8b8b; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; }
+  .f .st { font-size:11px; width:12px; text-align:right; }
+  .M { color:#e2c08d; } .A, .U { color:#73c991; } .D { color:#c74e39; } .R { color:#73c991; }
+  .f .acts { display:none; gap:2px; color:#ccc; font-size:12px; }
+  .f.hov .acts { display:flex; }
+  .f.hov .dir { flex:1; }
+  .meta { color:#8b8b8b; font-size:11px; }
+  .recent { padding:2px 10px 2px 22px; font-size:12px; color:#aaa; }
+  .recent .sha { color:#d7a3ff; font-family:Consolas,monospace; }
+  .diff { background:#1f1f1f; padding:0; }
+  .diff .tab { background:#181818; padding:6px 12px; color:#fff; border-bottom:1px solid #2b2b2b; font-family:"Segoe UI",sans-serif; }
+  .diff pre { margin:0; padding:10px 14px; color:#bbb; line-height:1.55; }
+  .add { background:rgba(115,201,145,.15); color:#9fe0b0; display:block; }
+  .del { background:rgba(199,78,57,.15); color:#e8a090; display:block; }
+  .note { font-size:.85rem; color:var(--text-secondary); margin-top:8px; }
+</style>
+
+<h2>Panel v2 — Source Control gibi</h2>
+<p class="subtitle">Değişen dosyalar artık panelde. Dosyaya tıklayınca sağda farkı (diff) açılır; satırın üzerine gelince + / − ile stage'e al / çıkar.</p>
+
+<div class="vs">
+  <div class="row">
+    <div class="act"><span>⧉</span><span>⌕</span><span>⑂</span><span class="on">✦</span><span>⊞</span></div>
+    <div class="side">
+      <div class="sec">CommitSmith <div class="icons"><div class="ic">↻</div><div class="ic">⋯</div></div></div>
+      <div class="ai-row"><span>✦ Claude Code · Haiku</span><span>▾</span></div>
+      <div class="box"><span class="ph">Commit mesajı (✦ ile AI yazsın)</span></div>
+      <div class="btns"><div class="btn aib">✦ Mesaj yaz</div><div class="btn pri">✦ Yaz + Commit</div></div>
+      <div class="btns"><div class="btn aib">⧉ Akıllı böl</div><div class="btn sub">⇡ Push · 2</div></div>
+      <div class="info">Bakılacak: <b style="color:#ddd">Stage (2)</b> · motocycle_sunal → origin · 2 commit gidecek</div>
+
+      <div class="sec" style="padding-top:2px">Değişiklikler</div>
+      <div class="grp"><span>▾ STAGED (stage'e alınanlar)</span><span class="icons"><span class="ic">−</span><span class="cnt">2</span></span></div>
+      <div class="f"><span class="ico">C#</span><span class="name">PadDropSnap.cs</span><span class="dir">Assets/…/WorldModule/Scripts</span><span class="st M">M</span></div>
+      <div class="f"><span class="ico">C#</span><span class="name">LotPiece.cs</span><span class="dir">Assets/…/AuctionModule/Scripts</span><span class="st M">M</span></div>
+
+      <div class="grp" style="margin-top:4px"><span>▾ DEĞİŞENLER</span><span class="icons"><span class="ic">+</span><span class="ic">↺</span><span class="cnt">19</span></span></div>
+      <div class="f hov"><span class="ico">Aa</span><span class="name">Oswald-Medium SDF.asset</span><span class="dir">…/Fonts/Oswald</span><span class="acts"><span>⎘</span><span>↺</span><span>+</span></span><span class="st M">M</span></div>
+      <div class="f"><span class="ico">Aa</span><span class="name">Oswald-SemiBold SDF.asset</span><span class="dir">…/Fonts/Oswald</span><span class="st M">M</span></div>
+      <div class="f"><span class="ico">▣</span><span class="name">MainMenuBackground.png</span><span class="dir">…/UIModule/Art/MainMenu</span><span class="st M">M</span></div>
+      <div class="f"><span class="ico">⚙</span><span class="name">QualitySettings.asset</span><span class="dir">ProjectSettings</span><span class="st M">M</span></div>
+      <div class="f"><span class="ico"></span><span class="name meta">… 15 dosya daha</span><span class="dir"></span></div>
+
+      <div class="grp" style="margin-top:4px"><span>▾ YENİ DOSYALAR <span class="meta">(Yaz + Commit'e girmez)</span></span><span class="icons"><span class="ic">+</span><span class="cnt">2</span></span></div>
+      <div class="f"><span class="ico">C#</span><span class="name">Foo.cs</span><span class="dir">Assets/Scripts</span><span class="st U">U</span></div>
+      <div class="f"><span class="ico">·</span><span class="name">Foo.cs.meta</span><span class="dir">Assets/Scripts</span><span class="st U">U</span></div>
+
+      <div class="sec" style="margin-top:8px">▸ Son işlemler (3)</div>
+    </div>
+    <div class="main diff">
+      <div class="tab">PadDropSnap.cs (Working Tree ↔ Index)</div>
+      <pre>  void Snap(LotPiece piece) {
+<span class="del">-     piece.transform.position = pad.position;</span>
+<span class="add">+     var top = pad.bounds.max.y;</span>
+<span class="add">+     piece.transform.position = new Vector3(p.x, top, p.z);</span>
+  }</pre>
+    </div>
+  </div>
+</div>
+
+<p class="note">Teknik not: dosya listesi VS Code'un kendi ağaç görünümüyle yapılır. Dosya ikonları, renkler, tıklayınca diff açma, sağ tık menüsü Source Control'deki gibi çalışır. Üstteki mesaj kutusu ve butonlar ayrı küçük bir bölüm. Panel Source Control'deki commit kutusuyla aynı mesajı paylaşır, yani ikisinden birine yazdığın diğerinde de görünür.</p>
