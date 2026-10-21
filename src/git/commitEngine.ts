@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { GitError, pathspecInput, runGit } from './gitRunner';
@@ -8,8 +9,13 @@ export type CommitGroup = { message: string; paths: string[] };
 
 export type CommitResult = {
   done: { sha: string; message: string }[];
-  failed?: { index: number; message: string; error: string };
+  failed?: { index: number; message: string; error: string; committed?: boolean };
 };
+
+/** Env for commands that act on the user's real index: never inherit a GIT_INDEX_FILE. */
+const REAL_INDEX_ENV: NodeJS.ProcessEnv = { GIT_INDEX_FILE: undefined };
+
+const IN_PROGRESS = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply'];
 
 function describeError(e: unknown): string {
   if (e instanceof GitError) return (e.stderr.trim() || e.message).trim();
@@ -40,19 +46,24 @@ export async function commitGroups(
     return groups.length > 0 ? fail(0, describeError(e)) : { done };
   }
 
+  if (groups.length > 0 && IN_PROGRESS.some((n) => existsSync(join(gitDir, n)))) {
+    return fail(0, 'A merge, cherry-pick, revert or rebase is in progress — finish it first.');
+  }
+
   for (let i = 0; i < groups.length; i++) {
     if (signal?.aborted) return fail(i, 'cancelled');
     const group = groups[i];
+    if (group.paths.length === 0) return fail(i, 'This group has no files.');
     const tmp = join(gitDir, `commitsmith-index-${randomBytes(8).toString('hex')}`);
     const env = { GIT_INDEX_FILE: tmp };
     const pathsInput = pathspecInput(group.paths);
     try {
-      const hasHead = (await runGit(root, ['rev-parse', '--verify', '-q', 'HEAD^{commit}'], { allowFail: true })).code === 0;
+      const hasHead = (await runGit(root, ['rev-parse', '--verify', '-q', 'HEAD^{commit}'], { env: REAL_INDEX_ENV, allowFail: true })).code === 0;
       await runGit(root, hasHead ? ['read-tree', 'HEAD'] : ['read-tree', '--empty'], { env });
 
       if (kind === 'staged') {
         const wanted = new Set(group.paths);
-        const real = (await runGit(root, ['ls-files', '-s', '-z'])).stdout;
+        const real = (await runGit(root, ['ls-files', '-s', '-z'], { env: REAL_INDEX_ENV })).stdout;
         const entries: string[] = [];
         const present = new Set<string>();
         for (const rec of real.split('\0')) {
@@ -84,16 +95,25 @@ export async function commitGroups(
       if (commit.code !== 0) {
         return fail(i, `${commit.stderr}\n${commit.stdout}`.trim() || `git commit failed (${commit.code})`);
       }
-      const sha = (await runGit(root, ['rev-parse', 'HEAD'])).stdout.trim();
+      const sha = (await runGit(root, ['rev-parse', 'HEAD'], { env: REAL_INDEX_ENV })).stdout.trim();
       done.push({ sha, message: group.message });
 
-      // Real index: committed paths now equal the new HEAD. Nothing else is touched.
+      // Real index: every path the commit touched (hooks may add more) now equals the new HEAD.
+      const touched = (
+        await runGit(root, ['diff-tree', '-r', '-z', '--name-only', '--no-commit-id', '--root', 'HEAD'], {
+          env: REAL_INDEX_ENV,
+        })
+      ).stdout.split('\0');
+      const resetPaths = [...new Set([...group.paths, ...touched.filter(Boolean)])];
       const reset = await runGit(root, ['reset', '-q', '--pathspec-from-file=-', '--pathspec-file-nul'], {
-        input: pathsInput,
+        env: REAL_INDEX_ENV,
+        input: pathspecInput(resetPaths),
         allowFail: true,
       });
       if (reset.code !== 0) {
-        return fail(i, `committed ${sha}, but refreshing the index failed: ${reset.stderr.trim()}`);
+        const f = fail(i, `committed ${sha}, but refreshing the index failed: ${reset.stderr.trim()}`);
+        f.failed!.committed = true;
+        return f;
       }
     } catch (e) {
       return fail(i, describeError(e));

@@ -37,8 +37,72 @@ describe('commitEngine', () => {
     repo.write('a.txt', 'a2\n');
     repo.write('b.txt', 'b2\n');
     await repo.git('add', 'a.txt', 'b.txt');
-    await commitGroups(repo.root, 'staged', [{ message: 'm', paths: ['a.txt'] }]);
+    const res = await commitGroups(repo.root, 'staged', [{ message: 'm', paths: ['a.txt'] }]);
+    assert.equal(res.failed, undefined);
+    assert.equal((await repo.git('show', 'HEAD:a.txt')).trim(), 'a2');
+    assert.equal((await repo.git('show', 'HEAD:b.txt')).trim(), 'b');
     assert.equal((await repo.git('diff', '--cached', '--name-only')).trim(), 'b.txt');
+  });
+
+  for (const kind of ['staged', 'all'] as const) {
+    it(`empty paths fail without touching anything (${kind})`, async () => {
+      repo.write('a.txt', 'a2\n');
+      repo.write('b.txt', 'b2\n');
+      repo.write('n.txt', 'n\n');
+      await repo.git('add', 'b.txt');
+      const head = (await repo.git('rev-parse', 'HEAD')).trim();
+      const res = await commitGroups(repo.root, kind, [{ message: 'm', paths: [] }]);
+      assert.equal(res.done.length, 0);
+      assert.equal(res.failed?.index, 0);
+      assert.equal((await repo.git('rev-parse', 'HEAD')).trim(), head);
+      assert.equal((await repo.git('diff', '--cached', '--name-only')).trim(), 'b.txt');
+    });
+  }
+
+  it('hook that stages another file leaves no stale index entry', async () => {
+    repo.write('.git/hooks/pre-commit', '#!/bin/sh\necho hooked > c.txt\ngit add c.txt\nexit 0\n');
+    chmodSync(join(repo.root, '.git', 'hooks', 'pre-commit'), 0o755);
+    repo.write('a.txt', 'a2\n');
+    const res = await commitGroups(repo.root, 'all', [{ message: 'm', paths: ['a.txt'] }]);
+    assert.equal(res.failed, undefined);
+    assert.equal((await repo.git('show', 'HEAD:c.txt')).trim(), 'hooked');
+    assert.equal((await repo.git('status', '--porcelain')).trim(), '');
+  });
+
+  it('failed index refresh is reported as committed', async () => {
+    repo.write('.git/hooks/post-commit', '#!/bin/sh\ntouch "$(git rev-parse --absolute-git-dir)/index.lock"\nexit 0\n');
+    chmodSync(join(repo.root, '.git', 'hooks', 'post-commit'), 0o755);
+    repo.write('a.txt', 'a2\n');
+    const res = await commitGroups(repo.root, 'all', [{ message: 'm', paths: ['a.txt'] }]);
+    assert.equal(res.done.length, 1);
+    assert.equal(res.failed?.committed, true);
+    assert.equal(res.failed?.index, 0);
+    rmSync(join(repo.root, '.git', 'index.lock'), { force: true });
+  });
+
+  it('refuses while a merge is in progress', async () => {
+    repo.write('.git/MERGE_HEAD', (await repo.git('rev-parse', 'HEAD')).trim() + '\n');
+    repo.write('a.txt', 'a2\n');
+    const res = await commitGroups(repo.root, 'all', [{ message: 'm', paths: ['a.txt'] }]);
+    assert.equal(res.done.length, 0);
+    assert.equal(res.failed?.index, 0);
+    assert.ok(res.failed?.error.includes('in progress'));
+  });
+
+  it('ignores an inherited GIT_INDEX_FILE', async () => {
+    const saved = process.env.GIT_INDEX_FILE;
+    repo.write('a.txt', 'a2\n');
+    await repo.git('add', 'a.txt');
+    process.env.GIT_INDEX_FILE = join(repo.root, 'bogus-index');
+    try {
+      const res = await commitGroups(repo.root, 'staged', [{ message: 'm', paths: ['a.txt'] }]);
+      assert.equal(res.failed, undefined);
+    } finally {
+      if (saved === undefined) delete process.env.GIT_INDEX_FILE;
+      else process.env.GIT_INDEX_FILE = saved;
+    }
+    assert.equal((await repo.git('status', '--porcelain')).trim(), '');
+    assert.ok(!existsSync(join(repo.root, 'bogus-index')));
   });
 
   it('all scope, three groups in order', async () => {
