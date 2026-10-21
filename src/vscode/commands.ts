@@ -103,9 +103,18 @@ export class CommitSmithCommands implements vscode.Disposable, SplitHost {
     );
   }
 
-  async reportMissing(name: string, onText?: (text: string) => void): Promise<void> {
+  /** Explains why no tool can run: the chosen one is missing, has no models, or nothing was found. */
+  async reportNoTool(onText?: (text: string) => void): Promise<void> {
+    const c = this.picker.choice();
+    if (c.kind === 'noModels') {
+      return this.reportMissing(this.picker.displayName(c.id), onText, vscode.l10n.t('{0} has no models. Add some in commitsmith.models.{1}', this.picker.displayName(c.id), c.id));
+    }
+    return this.reportMissing(c.kind === 'missing' ? this.picker.displayName(c.id) : 'AI', onText);
+  }
+
+  async reportMissing(name: string, onText?: (text: string) => void, message?: string): Promise<void> {
     const another = vscode.l10n.t('Pick another');
-    const text = vscode.l10n.t('{0} was not found', name);
+    const text = message ?? vscode.l10n.t('{0} was not found', name);
     onText?.(text);
     if ((await vscode.window.showErrorMessage(text, another)) === another) {
       await this.pickModel();
@@ -117,7 +126,7 @@ export class CommitSmithCommands implements vscode.Disposable, SplitHost {
     await this.picker.whenReady();
     const cur = this.picker.current();
     if (!cur) {
-      await this.reportMissing('AI');
+      await this.reportNoTool();
       return undefined;
     }
     const cfg = this.cfg();

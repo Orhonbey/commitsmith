@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
 import { createClaudeTool } from '../ai/claudeTool';
 import { createCodexTool } from '../ai/codexTool';
+import { ToolChoice, chooseTool } from '../ai/choose';
 import { detectTools } from '../ai/registry';
-import type { AiTool, ModelInfo } from '../ai/types';
+import type { AiTool, ModelInfo, ToolId } from '../ai/types';
 
 type Entry = { tool: AiTool; exe?: string; models: ModelInfo[] };
 
@@ -66,20 +67,43 @@ export class ToolPicker implements vscode.Disposable {
     this.render();
   }
 
-  /** The tool and model to use: the configured ones, else the first detected tool's first model. */
-  current(): { tool: AiTool; model: string } | undefined {
+  /**
+   * The tool and model to use, or why there is none. A tool the user set in `commitsmith.tool` is
+   * never replaced by another one; the default only picks the first detected tool with models.
+   */
+  choice(): ToolChoice {
     const cfg = this.cfg();
-    const found = this.entries.filter((e) => e.exe && e.models.length > 0);
-    const entry = found.find((e) => e.tool.id === cfg.get<string>('tool')) ?? found[0];
-    if (!entry) return undefined;
-    const saved = cfg.get<string>('model', '');
-    const model = entry.tool.id === cfg.get<string>('tool') && saved ? saved : entry.models[0].id;
-    return { tool: entry.tool, model };
+    const set = cfg.inspect<string>('tool');
+    const toolSetByUser = [
+      set?.globalValue,
+      set?.workspaceValue,
+      set?.workspaceFolderValue,
+      set?.globalLanguageValue,
+      set?.workspaceLanguageValue,
+      set?.workspaceFolderLanguageValue,
+    ].some((v) => v !== undefined);
+    const entries = this.entries.map((e) => ({ id: e.tool.id, found: !!e.exe, models: e.models.map((m) => m.id) }));
+    return chooseTool(entries, { tool: cfg.get<string>('tool'), toolSetByUser, model: cfg.get<string>('model', '') });
+  }
+
+  current(): { tool: AiTool; model: string } | undefined {
+    const c = this.choice();
+    if (c.kind !== 'ok') return undefined;
+    return { tool: this.entries.find((e) => e.tool.id === c.id)!.tool, model: c.model };
+  }
+
+  displayName(id: ToolId): string {
+    return this.entries.find((e) => e.tool.id === id)?.tool.displayName ?? id;
   }
 
   private render(): void {
     const cur = this.current();
-    if (!cur) {
+    const c = this.choice();
+    if (c.kind === 'missing') {
+      this.item.text = '$(warning) ' + vscode.l10n.t('CommitSmith: {0} was not found', this.displayName(c.id));
+    } else if (c.kind === 'noModels') {
+      this.item.text = '$(warning) ' + vscode.l10n.t('CommitSmith: {0} has no models', this.displayName(c.id));
+    } else if (!cur) {
       this.item.text = '$(sparkle) ' + vscode.l10n.t('CommitSmith: no AI tool found');
     } else {
       const entry = this.entries.find((e) => e.tool === cur.tool)!;

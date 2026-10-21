@@ -22,7 +22,7 @@ export type PlannerEnv = {
   picker: ToolPicker;
   cfg(): vscode.WorkspaceConfiguration;
   diffOptions(): DiffOptions;
-  reportMissing(name: string): Promise<void>;
+  reportNoTool(): Promise<void>;
 };
 
 /** Scope (untracked files always included) -> diff -> AI -> validated plan. Never touches the index. */
@@ -30,7 +30,7 @@ export async function makePlan(env: PlannerEnv, root: string, locks?: PlanLocks)
   await env.picker.whenReady();
   const cur = env.picker.current();
   if (!cur) {
-    await env.reportMissing('AI');
+    await env.reportNoTool();
     return undefined;
   }
   const cfg = env.cfg();
