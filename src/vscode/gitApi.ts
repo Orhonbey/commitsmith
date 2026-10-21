@@ -35,3 +35,39 @@ export async function getRepository(arg: unknown): Promise<{ root: string; repo:
   }
   return repo ? { root: repo.rootUri.fsPath, repo } : undefined;
 }
+
+/** Calls `onChange` whenever a repository opens, closes or changes state. */
+export class RepoWatcher implements vscode.Disposable {
+  private readonly subs: vscode.Disposable[] = [];
+  private readonly repoSubs = new Map<string, vscode.Disposable>();
+  private disposed = false;
+
+  constructor(private readonly onChange: () => void) {
+    void this.start();
+  }
+
+  private async start(): Promise<void> {
+    const api = await getApi();
+    if (!api || this.disposed) return;
+    const sync = () => {
+      const open = new Map(api.repositories.map((r) => [r.rootUri.fsPath, r]));
+      for (const [root, sub] of this.repoSubs) {
+        if (!open.has(root)) {
+          sub.dispose();
+          this.repoSubs.delete(root);
+        }
+      }
+      for (const [root, repo] of open) {
+        if (!this.repoSubs.has(root)) this.repoSubs.set(root, repo.state.onDidChange(() => this.onChange()));
+      }
+      this.onChange();
+    };
+    this.subs.push(api.onDidOpenRepository(sync), api.onDidCloseRepository(sync));
+    sync();
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    for (const s of [...this.subs, ...this.repoSubs.values()]) s.dispose();
+  }
+}

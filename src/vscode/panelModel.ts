@@ -1,5 +1,5 @@
-// Pure view-model of the Activity Bar panel: turns status, push info, picker state and the recent
-// list into plain JSON for the webview. No vscode import, so it is unit-tested with mocha.
+// Pure view-model of the Activity Bar panel's webview: turns status, push info and picker state
+// into plain JSON. The file list and the Recent list are native trees (changesModel, recentView). No vscode import, so it is unit-tested with mocha.
 import { resolveScope } from '../git/scope';
 import type { FileStatus } from '../git/status';
 import { decidePush, type PushInfo } from '../push/push';
@@ -21,8 +21,8 @@ export type PushLine =
   | { kind: 'noRemote' }
   | { kind: 'unborn' }
   | { kind: 'detached' }
-  | { kind: 'noUpstream'; ahead: number }
-  | { kind: 'upstream'; upstream: string; ahead: number };
+  | { kind: 'noUpstream'; branch: string; ahead: number }
+  | { kind: 'upstream'; branch: string; upstream: string; ahead: number };
 
 export type AiRow = {
   /** "Claude Code · Haiku" when a tool can run; otherwise `problem` says why not. */
@@ -39,17 +39,18 @@ export type PanelInput = {
   includeUntracked: boolean;
   push: PushInfo | undefined;
   busy: boolean;
-  recent: RecentEntry[];
+  /** The commit message currently in the repository's Source Control input box. */
+  message: string;
 };
 
 export type PanelModel = {
   hasRepo: boolean;
   ai: AiRow;
   repo: { name: string; selected: string; choices: { root: string; name: string }[] };
-  scope: { staged: number; all: number; active: 'staged' | 'all'; leftOut: number };
+  scope: { staged: number; all: number; active: 'staged' | 'all' };
   push: PushLine;
   busy: boolean;
-  recent: RecentEntry[];
+  message: string;
 };
 
 const folderName = (root: string) => root.split(/[\\/]/).filter(Boolean).pop() || root;
@@ -59,8 +60,8 @@ function pushLine(info: PushInfo | undefined): PushLine {
   const d = decidePush(info);
   if (d.kind === 'noRemote') return { kind: 'noRemote' };
   if (!info.branch) return { kind: info.unborn ? 'unborn' : 'detached' };
-  if (!info.upstream) return { kind: 'noUpstream', ahead: info.ahead };
-  return { kind: 'upstream', upstream: info.upstream, ahead: info.ahead };
+  if (!info.upstream) return { kind: 'noUpstream', branch: info.branch, ahead: info.ahead };
+  return { kind: 'upstream', branch: info.branch, upstream: info.upstream, ahead: info.ahead };
 }
 
 export function buildPanelModel(i: PanelInput): PanelModel {
@@ -72,7 +73,6 @@ export function buildPanelModel(i: PanelInput): PanelModel {
     { includeUntracked: i.includeUntracked },
   );
   const staged = real.kind === 'staged' ? real.files.length : 0;
-  const untracked = i.status.filter((s) => s.untracked).length;
   return {
     hasRepo: i.repos.length > 0,
     ai: i.ai,
@@ -85,10 +85,9 @@ export function buildPanelModel(i: PanelInput): PanelModel {
       staged,
       all: unstaged.files.length,
       active: staged > 0 ? 'staged' : 'all',
-      leftOut: staged > 0 || !i.includeUntracked ? untracked : 0,
     },
     push: pushLine(i.push),
     busy: i.busy,
-    recent: i.recent.slice(0, RECENT_MAX),
+    message: i.message,
   };
 }

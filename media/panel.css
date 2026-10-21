@@ -1,30 +1,25 @@
 body {
   margin: 0;
-  padding: 8px 12px 16px;
+  padding: 6px 12px 10px;
   color: var(--vscode-foreground);
   background: var(--vscode-sideBar-background);
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
 }
-button, select { font-family: inherit; font-size: inherit; }
-.sec { margin-top: 12px; }
-.sec-title {
-  margin: 0 0 4px;
-  font-size: 0.85em;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--vscode-sideBarSectionHeader-foreground, var(--vscode-descriptionForeground));
-}
+button, select, textarea { font-family: inherit; font-size: inherit; }
 .note { color: var(--vscode-descriptionForeground); margin-top: 4px; overflow-wrap: anywhere; }
 .working { font-style: italic; }
 .warn { color: var(--vscode-editorWarning-foreground); }
 
 .ai {
-  display: block;
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
   width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 6px;
   text-align: left;
-  padding: 6px 8px;
+  padding: 4px 8px;
   color: var(--vscode-foreground);
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-panel-border, transparent);
@@ -33,37 +28,38 @@ button, select { font-family: inherit; font-size: inherit; }
 }
 .ai:hover { background: var(--vscode-list-hoverBackground); }
 .ai:focus-visible, .btn:focus-visible, .repo-select:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
-.ai-main { display: block; font-weight: 600; overflow-wrap: anywhere; }
-.ai-found { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 2px; font-size: 0.85em; color: var(--vscode-descriptionForeground); }
-.tool.yes { color: var(--vscode-testing-iconPassed, var(--vscode-descriptionForeground)); }
+.ai-main { font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
+.ai-caret { flex: none; color: var(--vscode-descriptionForeground); }
 
-.repo-name { overflow-wrap: anywhere; }
 .repo-select {
   width: 100%;
   box-sizing: border-box;
+  margin-bottom: 6px;
   padding: 3px 4px;
   color: var(--vscode-dropdown-foreground);
   background: var(--vscode-dropdown-background);
   border: 1px solid var(--vscode-dropdown-border, transparent);
 }
 
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip {
-  padding: 2px 8px;
-  border-radius: 10px;
-  border: 1px solid var(--vscode-panel-border, var(--vscode-descriptionForeground));
-  color: var(--vscode-descriptionForeground);
+.message {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 6px;
+  padding: 4px 6px;
+  min-height: 3.6em;
+  resize: vertical;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 2px;
 }
-.chip.active {
-  color: var(--vscode-badge-foreground);
-  background: var(--vscode-badge-background);
-  border-color: transparent;
-  font-weight: 600;
-}
+.message::placeholder { color: var(--vscode-input-placeholderForeground); }
+.message:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
 
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 4px; margin-bottom: 4px; }
 .btn {
-  padding: 5px 8px;
+  padding: 4px 6px;
   color: var(--vscode-button-secondaryForeground);
   background: var(--vscode-button-secondaryBackground);
   border: 1px solid transparent;
@@ -72,16 +68,9 @@ button, select { font-family: inherit; font-size: inherit; }
   overflow-wrap: anywhere;
 }
 .btn:hover:not(:disabled) { background: var(--vscode-button-secondaryHoverBackground); }
+.btn.aibtn { border-color: var(--vscode-button-border, var(--vscode-focusBorder)); }
 .btn.primary { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
 .btn.primary:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
 .btn:disabled { opacity: 0.5; cursor: default; }
 
-.push-line { margin-top: 12px; color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }
-
-.recent { list-style: none; margin: 0; padding: 0; }
-.recent-item { display: flex; gap: 6px; padding: 2px 0; }
-.recent-icon { flex: none; width: 1.2em; text-align: center; }
-.recent-item.failed .recent-icon { color: var(--vscode-errorForeground); }
-.recent-item.failed .recent-text { color: var(--vscode-errorForeground); }
-.recent-item.committed .recent-icon, .recent-item.pushed .recent-icon { color: var(--vscode-testing-iconPassed, inherit); }
-.recent-text { overflow-wrap: anywhere; min-width: 0; }
+.info { margin-top: 4px; font-size: 0.9em; color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }

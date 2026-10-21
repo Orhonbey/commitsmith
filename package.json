@@ -2,7 +2,7 @@
   "name": "commitsmith",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "commitsmith",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -42,7 +42,19 @@
         {
           "type": "webview",
           "id": "commitsmith.panel",
-          "name": "%view.panel.name%"
+          "name": "%view.panel.name%",
+          "initialSize": 3
+        },
+        {
+          "id": "commitsmith.changes",
+          "name": "%view.changes.name%",
+          "initialSize": 6
+        },
+        {
+          "id": "commitsmith.recent",
+          "name": "%view.recent.name%",
+          "visibility": "collapsed",
+          "initialSize": 1
         }
       ]
     },
@@ -74,6 +86,69 @@
       {
         "command": "commitsmith.pickModel",
         "title": "%cmd.pickModel%",
+        "category": "%category%"
+      },
+      {
+        "command": "commitsmith.refreshChanges",
+        "title": "%cmd.refresh%",
+        "category": "%category%",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "commitsmith.stage",
+        "title": "%cmd.stage%",
+        "category": "%category%",
+        "icon": "$(add)"
+      },
+      {
+        "command": "commitsmith.unstage",
+        "title": "%cmd.unstage%",
+        "category": "%category%",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "commitsmith.discard",
+        "title": "%cmd.discard%",
+        "category": "%category%",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "commitsmith.stageAll",
+        "title": "%cmd.stageAll%",
+        "category": "%category%",
+        "icon": "$(add)"
+      },
+      {
+        "command": "commitsmith.unstageAll",
+        "title": "%cmd.unstageAll%",
+        "category": "%category%",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "commitsmith.discardAll",
+        "title": "%cmd.discardAll%",
+        "category": "%category%",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "commitsmith.openFile",
+        "title": "%cmd.openFile%",
+        "category": "%category%",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "commitsmith.copyPath",
+        "title": "%cmd.copyPath%",
+        "category": "%category%"
+      },
+      {
+        "command": "commitsmith.openChange",
+        "title": "%cmd.openChange%",
+        "category": "%category%"
+      },
+      {
+        "command": "commitsmith.copySha",
+        "title": "%cmd.copySha%",
         "category": "%category%"
       }
     ],
@@ -120,6 +195,184 @@
         {
           "command": "commitsmith.pickModel",
           "when": "gitOpenRepositoryCount != 0"
+        },
+        {
+          "command": "commitsmith.refreshChanges",
+          "when": "false"
+        },
+        {
+          "command": "commitsmith.stage",
+          "when": "false"
+        },
+        {
+          "command": "commitsmith.unstage",
+          "when": "false"
+        },
+        {
+          "command": "commitsmith.discard",
+          "when": "false"
+        },
+        {
+          "command": "commitsmith.stageAll",
+          "when": "false"
+        },
+        {
+          "command": "commitsmith.unstageAll",
+          "when": "false"
+        },
+        {
+          "command": "commitsmith.discardAll",
+          "when": "false"
+        },
+        {
+          "command": "commitsmith.openFile",
+          "when": "false"
+        },
+        {
+          "command": "commitsmith.copyPath",
+          "when": "false"
+        },
+        {
+          "command": "commitsmith.openChange",
+          "when": "false"
+        },
+        {
+          "command": "commitsmith.copySha",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "commitsmith.refreshChanges",
+          "when": "view == commitsmith.changes",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "commitsmith.openFile",
+          "when": "view == commitsmith.changes && viewItem == file.staged",
+          "group": "inline@1"
+        },
+        {
+          "command": "commitsmith.unstage",
+          "when": "view == commitsmith.changes && viewItem == file.staged",
+          "group": "inline@3"
+        },
+        {
+          "command": "commitsmith.openFile",
+          "when": "view == commitsmith.changes && viewItem == file.changes",
+          "group": "inline@1"
+        },
+        {
+          "command": "commitsmith.discard",
+          "when": "view == commitsmith.changes && viewItem == file.changes",
+          "group": "inline@2"
+        },
+        {
+          "command": "commitsmith.stage",
+          "when": "view == commitsmith.changes && viewItem == file.changes",
+          "group": "inline@3"
+        },
+        {
+          "command": "commitsmith.openFile",
+          "when": "view == commitsmith.changes && viewItem == file.new",
+          "group": "inline@1"
+        },
+        {
+          "command": "commitsmith.stage",
+          "when": "view == commitsmith.changes && viewItem == file.new",
+          "group": "inline@3"
+        },
+        {
+          "command": "commitsmith.unstageAll",
+          "when": "view == commitsmith.changes && viewItem == group.staged",
+          "group": "inline@1"
+        },
+        {
+          "command": "commitsmith.discardAll",
+          "when": "view == commitsmith.changes && viewItem == group.changes",
+          "group": "inline@1"
+        },
+        {
+          "command": "commitsmith.stageAll",
+          "when": "view == commitsmith.changes && viewItem == group.changes",
+          "group": "inline@2"
+        },
+        {
+          "command": "commitsmith.stageAll",
+          "when": "view == commitsmith.changes && viewItem == group.untracked",
+          "group": "inline@1"
+        },
+        {
+          "command": "commitsmith.unstage",
+          "when": "view == commitsmith.changes && viewItem == file.staged",
+          "group": "1_modification@1"
+        },
+        {
+          "command": "commitsmith.openFile",
+          "when": "view == commitsmith.changes && viewItem == file.staged",
+          "group": "navigation@1"
+        },
+        {
+          "command": "commitsmith.copyPath",
+          "when": "view == commitsmith.changes && viewItem == file.staged",
+          "group": "2_copy@1"
+        },
+        {
+          "command": "commitsmith.stage",
+          "when": "view == commitsmith.changes && viewItem == file.changes",
+          "group": "1_modification@1"
+        },
+        {
+          "command": "commitsmith.discard",
+          "when": "view == commitsmith.changes && viewItem == file.changes",
+          "group": "1_modification@2"
+        },
+        {
+          "command": "commitsmith.openFile",
+          "when": "view == commitsmith.changes && viewItem == file.changes",
+          "group": "navigation@1"
+        },
+        {
+          "command": "commitsmith.copyPath",
+          "when": "view == commitsmith.changes && viewItem == file.changes",
+          "group": "2_copy@1"
+        },
+        {
+          "command": "commitsmith.stage",
+          "when": "view == commitsmith.changes && viewItem == file.new",
+          "group": "1_modification@1"
+        },
+        {
+          "command": "commitsmith.openFile",
+          "when": "view == commitsmith.changes && viewItem == file.new",
+          "group": "navigation@1"
+        },
+        {
+          "command": "commitsmith.copyPath",
+          "when": "view == commitsmith.changes && viewItem == file.new",
+          "group": "2_copy@1"
+        },
+        {
+          "command": "commitsmith.unstageAll",
+          "when": "view == commitsmith.changes && viewItem == group.staged",
+          "group": "1_modification@1"
+        },
+        {
+          "command": "commitsmith.stageAll",
+          "when": "view == commitsmith.changes && viewItem == group.changes",
+          "group": "1_modification@1"
+        },
+        {
+          "command": "commitsmith.discardAll",
+          "when": "view == commitsmith.changes && viewItem == group.changes",
+          "group": "1_modification@2"
+        },
+        {
+          "command": "commitsmith.stageAll",
+          "when": "view == commitsmith.changes && viewItem == group.untracked",
+          "group": "1_modification@1"
         }
       ]
     },
@@ -220,7 +473,23 @@
           "description": "%config.models.codex%"
         }
       }
-    }
+    },
+    "viewsWelcome": [
+      {
+        "view": "commitsmith.changes",
+        "contents": "%welcome.noRepo%",
+        "when": "gitOpenRepositoryCount == 0"
+      },
+      {
+        "view": "commitsmith.changes",
+        "contents": "%welcome.noChanges%",
+        "when": "gitOpenRepositoryCount != 0"
+      },
+      {
+        "view": "commitsmith.recent",
+        "contents": "%welcome.recent%"
+      }
+    ]
   },
   "scripts": {
     "build": "node esbuild.mjs",

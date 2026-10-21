@@ -4,8 +4,9 @@ import { readStatus } from '../git/status';
 import { readPushInfo } from '../push/push';
 import type { Activity } from './activity';
 import type { CommitSmithCommands } from './commands';
-import { getApi } from './gitApi';
+import { GitRepository, RepoWatcher, getApi } from './gitApi';
 import { PanelModel, buildPanelModel } from './panelModel';
+import type { RepoSelection } from './repoSelection';
 import type { ToolPicker } from './statusBar';
 
 export const PANEL_VIEW_ID = 'commitsmith.panel';
@@ -18,7 +19,11 @@ export type PanelMessage =
   | { type: 'ready' }
   | { type: 'pickModel' }
   | { type: 'run'; action: PanelAction }
-  | { type: 'selectRepo'; root: string };
+  | { type: 'selectRepo'; root: string }
+  | { type: 'setMessage'; value: string };
+
+/** The longest commit message the webview may write into the Source Control box. */
+export const MAX_MESSAGE_CHARS = 10_000;
 
 /** Validates a message from the webview; `roots` are the repositories that are open right now. */
 export function parsePanelMessage(raw: unknown, roots: readonly string[]): PanelMessage | undefined {
@@ -32,6 +37,8 @@ export function parsePanelMessage(raw: unknown, roots: readonly string[]): Panel
       return PANEL_ACTIONS.includes(m.action as PanelAction) ? { type: 'run', action: m.action as PanelAction } : undefined;
     case 'selectRepo':
       return typeof m.root === 'string' && roots.includes(m.root) ? { type: 'selectRepo', root: m.root } : undefined;
+    case 'setMessage':
+      return typeof m.value === 'string' && m.value.length <= MAX_MESSAGE_CHARS ? { type: 'setMessage', value: m.value } : undefined;
     default:
       return undefined;
   }
@@ -47,37 +54,35 @@ export function panelStrings(): Record<string, string> {
     found: vscode.l10n.t('found'),
     notFound: vscode.l10n.t('not found'),
     repository: vscode.l10n.t('Repository'),
-    scopeTitle: vscode.l10n.t('What will be looked at'),
-    staged: vscode.l10n.t('Staged ({0})'),
-    all: vscode.l10n.t('All ({0})'),
-    leftOut: vscode.l10n.t('{0} new files are not included'),
+    messagePlaceholder: vscode.l10n.t('Commit message (the AI can write it)'),
     writeMessage: vscode.l10n.t('Write message'),
     writeAndCommit: vscode.l10n.t('Write + Commit'),
     smartSplit: vscode.l10n.t('Smart split'),
     push: vscode.l10n.t('Push'),
+    pushCount: vscode.l10n.t('Push · {0}'),
     working: vscode.l10n.t('working…'),
-    pushUpstream: vscode.l10n.t('{0} · {1} commits to push'),
-    pushNoUpstream: vscode.l10n.t('no upstream · {0} commits to push'),
+    lookStaged: vscode.l10n.t('Looks at: Staged ({0})'),
+    lookAll: vscode.l10n.t('Looks at: All changes ({0})'),
+    branchUpstream: vscode.l10n.t('{0} → {1}'),
+    branchNoUpstream: vscode.l10n.t('{0} → no upstream'),
+    commitsToPush: vscode.l10n.t('{0} commits to push'),
     noRemote: vscode.l10n.t('This repository has no remote to push to'),
     unborn: vscode.l10n.t('Nothing to push yet. Make a first commit'),
     detached: vscode.l10n.t('Not on a branch'),
-    recent: vscode.l10n.t('Recent'),
-    nothingYet: vscode.l10n.t('Nothing yet'),
-    recentCommitted: vscode.l10n.t('Committed {0} {1}'),
-    recentPushed: vscode.l10n.t('Pushed {0}'),
     noRepo: vscode.l10n.t('No Git repository is open'),
   };
 }
 
-/** The Activity Bar view: a small control panel for the selected repository. */
+/** The Activity Bar webview: AI row, commit message box and the four actions for the selected repository. */
 export class SidePanel implements vscode.WebviewViewProvider, vscode.Disposable {
   private view: vscode.WebviewView | undefined;
-  private selected: string | undefined;
   private roots: string[] = [];
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private poll: ReturnType<typeof setInterval> | undefined;
+  /** The commit message the webview was last told about (or typed itself). */
+  private known = '';
   private seq = 0;
   private readonly subs: vscode.Disposable[] = [];
-  private readonly repoSubs = new Map<string, vscode.Disposable>();
   /** Counts resolveWebviewView calls (extension tests check the provider was reached). */
   resolved = 0;
 
@@ -86,41 +91,24 @@ export class SidePanel implements vscode.WebviewViewProvider, vscode.Disposable 
     private readonly commands: CommitSmithCommands,
     private readonly picker: ToolPicker,
     private readonly activity: Activity,
+    private readonly selection: RepoSelection,
   ) {
     const changed = () => this.schedule();
     this.subs.push(
       picker.onDidChange(changed),
+      selection.onDidChange(changed),
+      new RepoWatcher(changed),
       activity.onDidChange(changed),
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration('commitsmith')) changed();
       }),
     );
-    void this.watchRepositories();
-  }
-
-  private async watchRepositories(): Promise<void> {
-    const api = await getApi();
-    if (!api) return;
-    const sync = () => {
-      const open = new Map(api.repositories.map((r) => [r.rootUri.fsPath, r]));
-      for (const [root, sub] of this.repoSubs) {
-        if (!open.has(root)) {
-          sub.dispose();
-          this.repoSubs.delete(root);
-        }
-      }
-      for (const [root, repo] of open) {
-        if (!this.repoSubs.has(root)) this.repoSubs.set(root, repo.state.onDidChange(() => this.schedule()));
-      }
-      this.schedule();
-    };
-    this.subs.push(api.onDidOpenRepository(sync), api.onDidCloseRepository(sync));
-    sync();
   }
 
   dispose(): void {
     if (this.timer) clearTimeout(this.timer);
-    for (const s of [...this.subs, ...this.repoSubs.values()]) s.dispose();
+    this.stopPolling();
+    for (const s of this.subs) s.dispose();
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -130,12 +118,17 @@ export class SidePanel implements vscode.WebviewViewProvider, vscode.Disposable 
     view.webview.options = { enableScripts: true, localResourceRoots: [media] };
     view.webview.html = this.html(view.webview, media);
     view.webview.onDidReceiveMessage((raw: unknown) => void this.handle(raw));
+    // The git API has no event for the input box, so while the view is showing it is read once a second.
+    const syncPolling = () => (view.visible ? this.startPolling() : this.stopPolling());
     view.onDidChangeVisibility(() => {
+      syncPolling();
       if (view.visible) this.schedule(0);
     });
     view.onDidDispose(() => {
+      this.stopPolling();
       if (this.view === view) this.view = undefined;
     });
+    syncPolling();
   }
 
   private html(web: vscode.Webview, media: vscode.Uri): string {
@@ -159,6 +152,31 @@ export class SidePanel implements vscode.WebviewViewProvider, vscode.Disposable 
 </html>`;
   }
 
+  private startPolling(): void {
+    this.poll ??= setInterval(() => void this.syncMessage(), 1000);
+  }
+
+  private stopPolling(): void {
+    if (this.poll) clearInterval(this.poll);
+    this.poll = undefined;
+  }
+
+  /** Tells the webview when the Source Control box changed behind its back (it ignores that while the user types). */
+  private async syncMessage(): Promise<void> {
+    if (!this.view?.visible) return;
+    const repo = await this.repo();
+    const value = repo?.inputBox.value ?? '';
+    if (value === this.known) return;
+    this.known = value;
+    void this.view?.webview.postMessage({ type: 'message', value });
+  }
+
+  private async repo(): Promise<GitRepository | undefined> {
+    const api = await getApi();
+    const root = this.selection.resolve((api?.repositories ?? []).map((r) => r.rootUri.fsPath));
+    return api?.repositories.find((r) => r.rootUri.fsPath === root);
+  }
+
   /** Refresh only while the view is visible; a hidden view refreshes when it is shown again. */
   private schedule(delay = 300): void {
     if (!this.view?.visible) return;
@@ -177,11 +195,18 @@ export class SidePanel implements vscode.WebviewViewProvider, vscode.Disposable 
         await this.commands.pickModel();
         break;
       case 'selectRepo':
-        this.selected = msg.root;
+        this.selection.select(msg.root);
         await this.refresh();
         break;
+      case 'setMessage': {
+        const repo = await this.repo();
+        if (!repo) return;
+        this.known = msg.value;
+        repo.inputBox.value = msg.value;
+        break;
+      }
       case 'run': {
-        const root = this.selected ?? this.roots[0];
+        const root = this.selection.resolve(this.roots);
         if (!root || this.activity.isBusy(root)) return;
         // The same argument the SCM title-bar buttons pass, so getRepository finds the repository.
         await this.commands[msg.action]({ rootUri: vscode.Uri.file(root) });
@@ -201,8 +226,9 @@ export class SidePanel implements vscode.WebviewViewProvider, vscode.Disposable 
   async buildModel(): Promise<PanelModel> {
     const api = await getApi();
     this.roots = (api?.repositories ?? []).map((r) => r.rootUri.fsPath);
-    if (!this.selected || !this.roots.includes(this.selected)) this.selected = this.roots[0];
-    const root = this.selected;
+    const root = this.selection.resolve(this.roots);
+    const message = api?.repositories.find((r) => r.rootUri.fsPath === root)?.inputBox.value ?? '';
+    this.known = message;
     let status: Awaited<ReturnType<typeof readStatus>> = [];
     let push: Awaited<ReturnType<typeof readPushInfo>> | undefined;
     if (root) {
@@ -220,7 +246,7 @@ export class SidePanel implements vscode.WebviewViewProvider, vscode.Disposable 
       includeUntracked: vscode.workspace.getConfiguration('commitsmith').get<boolean>('includeUntracked', false),
       push,
       busy: root ? this.activity.isBusy(root) : false,
-      recent: this.activity.recent(),
+      message,
     });
   }
 
