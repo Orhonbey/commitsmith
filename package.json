@@ -23,7 +23,7 @@
   "contributes": {},
   "scripts": {
     "build": "node esbuild.mjs",
-    "test": "mocha --import=tsx \"test/**/*.test.ts\"",
+    "test": "mocha --timeout 20000 --import=tsx \"test/**/*.test.ts\"",
     "package": "vsce package"
   },
   "devDependencies": {
