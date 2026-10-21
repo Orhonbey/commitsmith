@@ -44,7 +44,17 @@ export class SplitSession implements vscode.Disposable {
     this.state = { plan: first.plan, stale: false, used: false, revision: 1 };
     this.decorations = new PlanDecorations(root);
     this.decorations.set(first.plan);
-    this.watch = repo.state.onDidChange(() => this.scheduleCheck());
+    // The git extension drops working-tree events while it runs a git command of its own, so the
+    // tab also watches the files itself; checks are debounced (scheduleCheck).
+    const files = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(root), '**'));
+    const check = () => this.scheduleCheck();
+    this.watch = vscode.Disposable.from(
+      repo.state.onDidChange(check),
+      files,
+      files.onDidCreate(check),
+      files.onDidChange(check),
+      files.onDidDelete(check),
+    );
     this.panel = new PlanPanel(
       host.extensionUri,
       (raw) => void this.handle(raw),
