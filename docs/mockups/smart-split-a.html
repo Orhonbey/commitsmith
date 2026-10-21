@@ -1,0 +1,123 @@
+<style>
+  .vs { background:#181818; color:#cccccc; font-family:"Segoe UI",system-ui,sans-serif; font-size:13px; border-radius:8px; overflow:hidden; border:1px solid #2b2b2b; }
+  .vs-row { display:flex; min-height:520px; }
+  .vs-act { width:44px; background:#181818; border-right:1px solid #2b2b2b; display:flex; flex-direction:column; align-items:center; padding-top:10px; gap:18px; color:#858585; font-size:18px; }
+  .vs-act .on { color:#fff; border-left:2px solid #0078d4; padding-left:8px; margin-left:-10px; }
+  .vs-side { width:280px; flex-shrink:0; background:#181818; border-right:1px solid #2b2b2b; }
+  .vs-title { display:flex; align-items:center; justify-content:space-between; padding:8px 12px; font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#bbb; }
+  .vs-icons { display:flex; gap:4px; }
+  .ic { width:24px; height:22px; display:flex; align-items:center; justify-content:center; border-radius:4px; color:#ccc; font-size:13px; position:relative; }
+  .ic.ai { color:#d7a3ff; background:#2a2140; }
+  .ic.hot { outline:2px solid #d7a3ff; }
+  .ic .tip { position:absolute; top:26px; right:-40px; background:#252526; border:1px solid #454545; color:#ddd; font-size:11px; padding:3px 7px; border-radius:3px; white-space:nowrap; text-transform:none; letter-spacing:0; z-index:2; }
+  .vs-box { margin:4px 12px 8px; background:#313131; border:1px solid #3c3c3c; border-radius:4px; padding:7px 8px; min-height:44px; color:#777; font-family:Consolas,monospace; font-size:12px; }
+  .vs-btn { margin:0 12px 6px; background:#0078d4; color:#fff; text-align:center; padding:5px; border-radius:3px; opacity:.5; }
+  .vs-btn2 { display:flex; gap:6px; margin:0 12px 10px; }
+  .vs-btn2 div { flex:1; text-align:center; padding:5px 4px; border-radius:3px; font-size:12px; background:#2a2140; border:1px solid #5b3e8a; color:#e5ccff; }
+  .vs-grp { padding:4px 12px; font-size:11px; font-weight:600; color:#bbb; display:flex; justify-content:space-between; }
+  .vs-file { padding:2px 12px 2px 26px; display:flex; justify-content:space-between; color:#ccc; }
+  .vs-file .st { color:#e2c08d; font-size:11px; }
+  .vs-file .tag { font-size:10px; background:#5b3e8a; color:#fff; border-radius:3px; padding:0 4px; margin-right:6px; }
+  .vs-main { flex:1; background:#1f1f1f; display:flex; flex-direction:column; min-width:0; }
+  .tabs { display:flex; background:#181818; border-bottom:1px solid #2b2b2b; font-size:12px; }
+  .tab { padding:7px 14px; color:#888; border-right:1px solid #2b2b2b; }
+  .tab.on { background:#1f1f1f; color:#fff; border-top:1px solid #d7a3ff; }
+  .plan { padding:16px 18px; overflow:auto; }
+  .plan h4 { color:#fff; font-size:15px; margin-bottom:2px; }
+  .plan .sub { color:#999; font-size:12px; margin-bottom:14px; }
+  .cm { border:1px solid #3c3c3c; border-radius:6px; margin-bottom:10px; background:#181818; }
+  .cm.off { opacity:.6; }
+  .cm-h { display:flex; gap:10px; align-items:center; padding:8px 10px; border-bottom:1px solid #2b2b2b; }
+  .cm-h .num { background:#5b3e8a; color:#fff; border-radius:4px; padding:0 7px; font-size:12px; }
+  .cm-h input { flex:1; min-width:0; background:#313131; border:1px solid #3c3c3c; color:#e6e6e6; font-family:Consolas,monospace; font-size:12px; padding:4px 6px; border-radius:3px; }
+  .cm-h .x { color:#888; font-size:12px; }
+  .cm-f { padding:6px 10px 8px 44px; font-size:12px; color:#aaa; line-height:1.7; }
+  .cm-f .why { color:#8a8a8a; font-style:italic; }
+  .warn { color:#e2c08d; }
+  .plan-btns { display:flex; gap:8px; margin-top:14px; align-items:center; flex-wrap:wrap; }
+  .plan-btns div { padding:6px 12px; border-radius:4px; background:#2d2d2d; border:1px solid #3c3c3c; }
+  .plan-btns .pri { background:#0078d4; border-color:#0078d4; color:#fff; }
+  .chk { color:#bbb; font-size:12px; }
+  .vs-status { background:#0078d4; color:#fff; font-size:12px; padding:3px 10px; display:flex; gap:16px; }
+  .vs-status .ai { background:#5b3e8a; padding:0 8px; border-radius:2px; }
+  .steps { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:16px; }
+  .step { background:var(--bg-secondary); border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:.85rem; }
+  .step b { display:block; margin-bottom:2px; }
+  .prog { background:#252526; border:1px solid #454545; border-radius:4px; padding:8px 10px; font-size:12px; color:#ddd; margin-top:6px; font-family:"Segoe UI",sans-serif; }
+  .bar { height:3px; background:#333; border-radius:2px; margin-top:6px; overflow:hidden; }
+  .bar i { display:block; width:60%; height:100%; background:#d7a3ff; }
+  @media (max-width:800px){ .steps{grid-template-columns:1fr;} .vs-side{display:none;} }
+</style>
+
+<h2>Yerleşim A: Akıllı böl nasıl çalışır</h2>
+<p class="subtitle">Git panelindeki ⧉ ikonuna basınca plan editörde yeni bir sekmede açılır. Sol panel olduğu gibi kalır.</p>
+
+<div class="steps">
+  <div class="step"><b>1. ⧉ "Akıllı böl"e bas</b>Stage boşsa bütün değişikliklere, doluysa sadece stage'dekilere bakar.</div>
+  <div class="step"><b>2. AI düşünür</b>Sağ altta ilerleme bildirimi çıkar: "Claude Code 23 dosyayı inceliyor…" İptal edilebilir.</div>
+  <div class="step"><b>3. Plan sekmesi açılır</b>Düzenle, işaret kaldır, onayla. Sonra eklenti commit'leri sırayla atar.</div>
+</div>
+
+<div class="vs">
+  <div class="vs-row">
+    <div class="vs-act"><span>⧉</span><span>⌕</span><span class="on">⑂</span><span>▷</span><span>⊞</span></div>
+    <div class="vs-side">
+      <div class="vs-title">Source Control
+        <div class="vs-icons">
+          <div class="ic ai">✦</div>
+          <div class="ic ai">✦✓</div>
+          <div class="ic ai hot">⧉<span class="tip">Akıllı böl</span></div>
+          <div class="ic">⇡</div>
+        </div>
+      </div>
+      <div class="vs-box">Message (Ctrl+Enter to commit)</div>
+      <div class="vs-btn">✓ Commit</div>
+      <div class="vs-btn2"><div>✦ Mesaj yaz</div><div>✦ Yaz + Commit</div></div>
+      <div class="vs-grp"><span>▾ CHANGES</span><span>23</span></div>
+      <div class="vs-file"><span><span class="tag">1</span>PadDropSnap.cs</span><span class="st">M</span></div>
+      <div class="vs-file"><span><span class="tag">1</span>LotPiece.cs</span><span class="st">M</span></div>
+      <div class="vs-file"><span><span class="tag">2</span>Oswald-Medium SDF.asset</span><span class="st">M</span></div>
+      <div class="vs-file"><span><span class="tag">2</span>…13 font .asset</span><span class="st">M</span></div>
+      <div class="vs-file"><span><span class="tag">3</span>MainMenuBackground.png</span><span class="st">M</span></div>
+      <div class="vs-file"><span><span class="tag" style="background:#555">?</span>QualitySettings.asset</span><span class="st">M</span></div>
+      <div style="padding:8px 12px;font-size:11px;color:#888">Dosyaların yanındaki numara hangi commit'e gideceğini gösterir.</div>
+    </div>
+
+    <div class="vs-main">
+      <div class="tabs"><div class="tab">PadDropSnap.cs</div><div class="tab on">✦ Commit planı ×</div></div>
+      <div class="plan">
+        <h4>✦ Claude Code 4 commit öneriyor</h4>
+        <div class="sub">23 değişen dosya · motocycle_sunal · repodaki commit stili ve CLAUDE.md kuralları uygulandı (AI co-author yok)</div>
+
+        <div class="cm">
+          <div class="cm-h"><span class="chk">☑</span><span class="num">1</span><input value="fix(drag): lot pieces over the pad stand on the pad's top"><span class="x">↕</span></div>
+          <div class="cm-f">PadDropSnap.cs · LotPiece.cs<br><span class="why">İkisi de aynı sürükle-bırak düzeltmesi</span></div>
+        </div>
+        <div class="cm">
+          <div class="cm-h"><span class="chk">☑</span><span class="num">2</span><input value="chore(assets): font atlas data written by the Editor"><span class="x">↕</span></div>
+          <div class="cm-f">14 SDF font .asset (Oswald, Barlow, GallerySign, CJK fallback)<br><span class="why">Unity'nin yazdığı atlas verisi, içerik okunmadı, sadece adlar</span></div>
+        </div>
+        <div class="cm">
+          <div class="cm-h"><span class="chk">☑</span><span class="num">3</span><input value="chore(ui): new main menu background"><span class="x">↕</span></div>
+          <div class="cm-f">MainMenuBackground.png <span class="warn">· ikili dosya, 4.2 MB</span></div>
+        </div>
+        <div class="cm off">
+          <div class="cm-h"><span class="chk">☐</span><span class="num">4</span><input value="chore(settings): quality settings changed"><span class="x">↕</span></div>
+          <div class="cm-f">QualitySettings.asset<br><span class="warn">⚠ AI emin değil: bilerek mi değişti? İşaretsiz bırakıldı, commit'lenmez.</span></div>
+        </div>
+
+        <div class="plan-btns">
+          <div class="pri">✓ İşaretli 3 commit'i at</div>
+          <div>✦ Yeniden grupla</div>
+          <div>Vazgeç</div>
+          <span class="chk">☐ Bitince push da yap</span>
+        </div>
+        <div style="font-size:11px;color:#888;margin-top:10px">Bir dosyayı başka commit'e taşımak için sürükle · ↕ ile commit sırasını değiştir</div>
+
+        <div class="prog" style="max-width:320px;margin-left:auto;margin-top:18px">✦ Claude Code 23 dosyayı inceliyor… <span style="float:right;color:#888">İptal</span><div class="bar"><i></i></div></div>
+        <div style="font-size:11px;color:#777;text-align:right;margin-top:3px">(2. adımda sağ altta çıkan bildirim)</div>
+      </div>
+    </div>
+  </div>
+  <div class="vs-status"><span>⑂ motocycle_sunal</span><span>⇡ 0 ⇣ 0</span><span class="ai">✦ Claude Code ▾</span></div>
+</div>

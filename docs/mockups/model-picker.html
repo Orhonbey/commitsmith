@@ -1,0 +1,55 @@
+<style>
+  .win { background:#1f1f1f; color:#ccc; font-family:"Segoe UI",system-ui,sans-serif; font-size:13px; border-radius:8px; border:1px solid #2b2b2b; overflow:hidden; position:relative; min-height:360px; }
+  .qp { position:absolute; top:0; left:50%; transform:translateX(-50%); width:440px; max-width:92%; background:#252526; border:1px solid #454545; border-radius:6px; box-shadow:0 6px 20px rgba(0,0,0,.5); margin-top:10px; }
+  .qp input { width:100%; background:#313131; border:1px solid #0078d4; color:#ddd; padding:6px 8px; font-size:13px; border-radius:4px 4px 0 0; }
+  .qp .sep { font-size:11px; color:#888; padding:6px 10px 2px; display:flex; justify-content:space-between; border-top:1px solid #333; }
+  .qp .it { padding:5px 10px; display:flex; justify-content:space-between; }
+  .qp .it small { color:#888; }
+  .qp .it.on { background:#04395e; color:#fff; }
+  .qp .it .ok { color:#73c991; }
+  .qp .it.dis { color:#666; }
+  .bar { position:absolute; bottom:0; left:0; right:0; background:#0078d4; color:#fff; font-size:12px; padding:3px 10px; display:flex; gap:16px; }
+  .bar .ai { background:#5b3e8a; padding:0 8px; border-radius:2px; outline:2px solid #fff; }
+  .split2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:800px){ .split2{grid-template-columns:1fr;} }
+  .set { background:#1f1f1f; color:#ccc; font-family:"Segoe UI",system-ui,sans-serif; font-size:13px; border-radius:8px; border:1px solid #2b2b2b; padding:14px; }
+  .set .row { margin-bottom:12px; }
+  .set .k { color:#fff; font-weight:600; font-size:13px; }
+  .set .k span { color:#888; font-weight:400; }
+  .set .d { color:#999; font-size:12px; margin:2px 0 5px; }
+  .set .dd { background:#313131; border:1px solid #3c3c3c; border-radius:3px; padding:4px 8px; display:inline-block; min-width:220px; }
+</style>
+
+<h2>Model seçimi</h2>
+<p class="subtitle">Alttaki mor <b>✦ Claude Code · Sonnet</b> yazısına tıklayınca VS Code'un üstte açılan listesi çıkar. Önce AI, altında modelleri.</p>
+
+<div class="split2">
+  <div>
+    <div class="label">Hızlı seçim (status bar'a tıklayınca)</div>
+    <div class="win">
+      <div class="qp">
+        <input value="" placeholder="AI ve model seç…">
+        <div class="sep"><span>CLAUDE CODE</span><span class="ok" style="color:#73c991">● kurulu · v2.x</span></div>
+        <div class="it"><span>Haiku</span><small>hızlı, ucuz · basit mesaj için</small></div>
+        <div class="it on"><span>✓ Sonnet</span><small>dengeli</small></div>
+        <div class="it"><span>Opus</span><small>en akıllı · akıllı böl için</small></div>
+        <div class="sep"><span>CODEX</span><span style="color:#73c991">● kurulu</span></div>
+        <div class="it"><span>gpt-5-codex</span><small>varsayılan</small></div>
+        <div class="it"><span>gpt-5-codex-mini</span><small>hızlı</small></div>
+        <div class="sep"><span>GEMINI CLI</span><span style="color:#888">○ bulunamadı</span></div>
+        <div class="it dis"><span>Kurulu değil</span><small></small></div>
+      </div>
+      <div class="bar"><span>⑂ motocycle_sunal</span><span>⇡ 0 ⇣ 0</span><span class="ai">✦ Claude Code · Sonnet ▾</span></div>
+    </div>
+    <p class="note" style="font-size:.8rem;color:var(--text-secondary);margin-top:6px">Model adları örnek. Eklenti listeyi kurulu araçtan okur, yeni model çıkınca kendiliğinden görünür.</p>
+  </div>
+
+  <div>
+    <div class="label">Fikir: işe göre ayrı model (Ayarlar)</div>
+    <div class="set">
+      <div class="row"><div class="k">Mesaj yazma modeli <span>✦ / ✦✓</span></div><div class="d">Tek commit mesajı. Hızlı olsun.</div><div class="dd">Claude Code · Haiku ▾</div></div>
+      <div class="row"><div class="k">Akıllı böl modeli <span>⧉</span></div><div class="d">Bütün değişiklikleri gruplar. Daha akıllı olsun.</div><div class="dd">Claude Code · Opus ▾</div></div>
+      <div class="row"><div class="k">Bulunamazsa</div><div class="d">Seçili AI kurulu değilse diğerine geç.</div><div class="dd">Codex'e geç ▾</div></div>
+    </div>
+  </div>
+</div>

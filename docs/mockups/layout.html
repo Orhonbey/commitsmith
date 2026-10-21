@@ -1,0 +1,164 @@
+<style>
+  .vs { background:#181818; color:#cccccc; font-family:"Segoe UI",system-ui,sans-serif; font-size:13px; border-radius:8px; overflow:hidden; border:1px solid #2b2b2b; }
+  .vs-row { display:flex; min-height:420px; }
+  .vs-act { width:44px; background:#181818; border-right:1px solid #2b2b2b; display:flex; flex-direction:column; align-items:center; padding-top:10px; gap:18px; color:#858585; font-size:18px; }
+  .vs-act .on { color:#fff; border-left:2px solid #0078d4; padding-left:8px; margin-left:-10px; }
+  .vs-side { width:300px; background:#181818; border-right:1px solid #2b2b2b; }
+  .vs-title { display:flex; align-items:center; justify-content:space-between; padding:8px 12px; font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#bbb; }
+  .vs-icons { display:flex; gap:4px; }
+  .ic { width:24px; height:22px; display:flex; align-items:center; justify-content:center; border-radius:4px; color:#ccc; font-size:13px; position:relative; }
+  .ic.ai { color:#d7a3ff; background:#2a2140; }
+  .ic .tip { position:absolute; top:26px; right:0; background:#252526; border:1px solid #454545; color:#ddd; font-size:11px; padding:3px 7px; border-radius:3px; white-space:nowrap; text-transform:none; letter-spacing:0; z-index:2; }
+  .vs-box { margin:4px 12px 8px; background:#313131; border:1px solid #3c3c3c; border-radius:4px; padding:7px 8px; min-height:58px; color:#e6e6e6; font-family:Consolas,monospace; font-size:12px; position:relative; }
+  .vs-box .spark { position:absolute; right:6px; bottom:5px; color:#d7a3ff; font-size:13px; }
+  .vs-btn { margin:0 12px 6px; background:#0078d4; color:#fff; text-align:center; padding:5px; border-radius:3px; }
+  .vs-btn2 { display:flex; gap:6px; margin:0 12px 10px; }
+  .vs-btn2 div { flex:1; text-align:center; padding:5px 4px; border-radius:3px; background:#2d2d2d; border:1px solid #3c3c3c; font-size:12px; }
+  .vs-btn2 .ai { background:#2a2140; border-color:#5b3e8a; color:#e5ccff; }
+  .vs-grp { padding:4px 12px; font-size:11px; font-weight:600; color:#bbb; display:flex; justify-content:space-between; }
+  .vs-file { padding:2px 12px 2px 26px; display:flex; justify-content:space-between; color:#ccc; }
+  .vs-file .st { color:#e2c08d; font-size:11px; }
+  .vs-file .st.a { color:#73c991; }
+  .vs-main { flex:1; background:#1f1f1f; padding:14px; color:#9d9d9d; font-family:Consolas,monospace; font-size:12px; }
+  .vs-status { background:#0078d4; color:#fff; font-size:12px; padding:3px 10px; display:flex; gap:16px; }
+  .vs-status .ai { background:#5b3e8a; padding:0 8px; border-radius:2px; }
+  .pane { padding:10px 12px; }
+  .lbl { font-size:11px; color:#999; margin:10px 0 4px; text-transform:uppercase; letter-spacing:.04em; }
+  .sel { background:#313131; border:1px solid #3c3c3c; border-radius:4px; padding:5px 8px; display:flex; justify-content:space-between; }
+  .chips { display:flex; gap:6px; }
+  .chip { padding:3px 9px; border-radius:10px; border:1px solid #3c3c3c; font-size:12px; }
+  .chip.on { background:#0078d4; border-color:#0078d4; color:#fff; }
+  .big { display:flex; flex-direction:column; gap:6px; margin-top:6px; }
+  .big div { padding:7px 10px; border-radius:4px; background:#2d2d2d; border:1px solid #3c3c3c; display:flex; justify-content:space-between; }
+  .big .pri { background:#0078d4; border-color:#0078d4; color:#fff; }
+  .big .ai { background:#2a2140; border-color:#5b3e8a; color:#e5ccff; }
+  .big small { color:#999; }
+  .big .pri small { color:#cfe6ff; }
+  .push { margin-top:10px; padding:7px 10px; border:1px dashed #3c3c3c; border-radius:4px; font-size:12px; color:#bbb; }
+  .note { font-size:12px; color:var(--text-secondary); margin-top:6px; }
+  .plan { background:#1f1f1f; color:#ccc; font-family:"Segoe UI",system-ui,sans-serif; font-size:13px; border-radius:8px; border:1px solid #2b2b2b; padding:16px; }
+  .plan h4 { color:#fff; font-size:14px; margin-bottom:2px; }
+  .plan .sub { color:#999; font-size:12px; margin-bottom:12px; }
+  .cm { border:1px solid #3c3c3c; border-radius:6px; margin-bottom:10px; background:#181818; }
+  .cm-h { display:flex; gap:10px; align-items:center; padding:8px 10px; border-bottom:1px solid #2b2b2b; }
+  .cm-h .num { background:#5b3e8a; color:#fff; border-radius:4px; padding:0 7px; font-size:12px; }
+  .cm-h input { flex:1; background:#313131; border:1px solid #3c3c3c; color:#e6e6e6; font-family:Consolas,monospace; font-size:12px; padding:4px 6px; border-radius:3px; }
+  .cm-f { padding:6px 10px 8px 44px; font-size:12px; color:#aaa; line-height:1.7; }
+  .cm-f .why { color:#8a8a8a; font-style:italic; }
+  .warn { color:#e2c08d; }
+  .plan-btns { display:flex; gap:8px; margin-top:12px; align-items:center; flex-wrap:wrap; }
+  .plan-btns div { padding:6px 12px; border-radius:4px; background:#2d2d2d; border:1px solid #3c3c3c; }
+  .plan-btns .pri { background:#0078d4; border-color:#0078d4; color:#fff; }
+  .chk { color:#bbb; font-size:12px; }
+</style>
+
+<h2>AI Commit — eklenti arayüzü taslağı</h2>
+<p class="subtitle">Butonlar nerede dursun? İki yerleşim var. Beğendiğine tıkla, aşağıda "Akıllı böl" ekranı da var.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>VS Code'un kendi Source Control paneline gömülü</h3>
+      <p>Yeni panel yok. Bildiğin git panelinin başlığına 4 ikon, commit kutusunun altına 2 buton eklenir. Hangi AI'ın kullanılacağı alttaki mavi şeritte (status bar) seçilir.</p>
+    </div>
+  </div>
+</div>
+
+<div class="vs" style="margin:10px 0 24px">
+  <div class="vs-row">
+    <div class="vs-act"><span>⧉</span><span>⌕</span><span class="on">⑂</span><span>▷</span><span>⊞</span></div>
+    <div class="vs-side">
+      <div class="vs-title">Source Control
+        <div class="vs-icons">
+          <div class="ic ai" title="Mesaj yaz">✦</div>
+          <div class="ic ai" title="Yaz + commit">✦✓</div>
+          <div class="ic ai">⧉<span class="tip">Akıllı böl: birden çok commit</span></div>
+          <div class="ic">⇡</div>
+          <div class="ic">⋯</div>
+        </div>
+      </div>
+      <div class="vs-box">fix(drag): lot pieces snap to pad top<br><br><span style="color:#888">Pieces dropped over the pad now…</span><span class="spark">✦</span></div>
+      <div class="vs-btn">✓ Commit</div>
+      <div class="vs-btn2"><div class="ai">✦ Mesaj yaz</div><div class="ai">✦ Yaz + Commit</div></div>
+      <div class="vs-grp"><span>▾ STAGED CHANGES</span><span>2</span></div>
+      <div class="vs-file"><span>PadDropSnap.cs</span><span class="st">M</span></div>
+      <div class="vs-file"><span>LotPiece.cs</span><span class="st">M</span></div>
+      <div class="vs-grp" style="margin-top:6px"><span>▾ CHANGES</span><span>21</span></div>
+      <div class="vs-file"><span>Oswald-Medium SDF.asset</span><span class="st">M</span></div>
+      <div class="vs-file"><span>MainMenuBackground.png</span><span class="st">M</span></div>
+      <div class="vs-file"><span>QualitySettings.asset</span><span class="st">M</span></div>
+      <div class="vs-file"><span>…18 dosya daha</span><span></span></div>
+    </div>
+    <div class="vs-main">// editör alanı</div>
+  </div>
+  <div class="vs-status"><span>⑂ motocycle_sunal</span><span>⇡ 2 ⇣ 0</span><span class="ai">✦ Claude Code ▾</span></div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Kendi ayrı paneli (sol çubukta yeni ✦ ikonu)</h3>
+      <p>Her şey tek ekranda, büyük butonlarla: hangi AI, neye bakılacak (Stage / Tümü), 4 işlem, push durumu. Git panelini değiştirmez ama ikisi arasında gidip gelirsin.</p>
+    </div>
+  </div>
+</div>
+
+<div class="vs" style="margin:10px 0 24px">
+  <div class="vs-row">
+    <div class="vs-act"><span>⧉</span><span>⌕</span><span>⑂</span><span class="on" style="color:#d7a3ff">✦</span><span>⊞</span></div>
+    <div class="vs-side">
+      <div class="vs-title">AI Commit <div class="vs-icons"><div class="ic">⚙</div></div></div>
+      <div class="pane">
+        <div class="lbl" style="margin-top:0">AI</div>
+        <div class="sel"><span>✦ Claude Code <small style="color:#73c991">● bulundu</small></span><span>▾</span></div>
+        <div style="font-size:11px;color:#888;margin-top:3px">Codex ● bulundu · ikisi de hazır</div>
+        <div class="lbl">Neye bakılsın</div>
+        <div class="chips"><div class="chip on">Stage (2)</div><div class="chip">Tümü (23)</div></div>
+        <div class="lbl">İşlem</div>
+        <div class="big">
+          <div class="ai"><span>✦ Sadece mesaj yaz</span><small>kutuya yazar</small></div>
+          <div class="pri"><span>✦ Mesaj yaz + Commit</span><small>2 dosya</small></div>
+          <div class="ai"><span>⧉ Akıllı böl</span><small>tümüne bakar</small></div>
+          <div><span>⇡ Push</span><small>2 commit hazır</small></div>
+        </div>
+        <div class="push">→ origin/motocycle_sunal · 2 commit gidecek</div>
+      </div>
+    </div>
+    <div class="vs-main">// editör alanı</div>
+  </div>
+  <div class="vs-status"><span>⑂ motocycle_sunal</span><span>⇡ 2 ⇣ 0</span></div>
+</div>
+
+<h3 style="margin-top:8px">"Akıllı böl" ekranı (iki yerleşimde de aynı)</h3>
+<p class="subtitle">AI değişiklikleri gruplar, sen onaylamadan hiçbir şey commit'lenmez. Mesajlar düzenlenebilir, grup kapatılabilir.</p>
+
+<div class="plan">
+  <h4>✦ Claude Code 4 commit öneriyor</h4>
+  <div class="sub">23 değişen dosya · motocycle_sunal · CLAUDE.md kuralları uygulandı (AI co-author yok)</div>
+
+  <div class="cm">
+    <div class="cm-h"><span class="chk">☑</span><span class="num">1</span><input value="fix(drag): lot pieces over the pad stand on the pad's top"></div>
+    <div class="cm-f">PadDropSnap.cs · LotPiece.cs<br><span class="why">Neden bu grup: ikisi de aynı sürükle-bırak düzeltmesi</span></div>
+  </div>
+  <div class="cm">
+    <div class="cm-h"><span class="chk">☑</span><span class="num">2</span><input value="chore(assets): font atlas data written by the Editor"></div>
+    <div class="cm-f">14 SDF font .asset dosyası (Oswald, Barlow, GallerySign, CJK fallback)<br><span class="why">Unity'nin kendi yazdığı atlas verisi, satır satır okunmadı</span></div>
+  </div>
+  <div class="cm">
+    <div class="cm-h"><span class="chk">☑</span><span class="num">3</span><input value="chore(ui): new main menu background"></div>
+    <div class="cm-f">MainMenuBackground.png <span class="warn">· ikili dosya, 4.2 MB</span></div>
+  </div>
+  <div class="cm">
+    <div class="cm-h"><span class="chk">☐</span><span class="num">4</span><input value="chore(settings): quality settings changed"></div>
+    <div class="cm-f">QualitySettings.asset<br><span class="warn">⚠ Emin değilim: bilerek mi değişti? İşaretsiz bıraktım.</span></div>
+  </div>
+
+  <div class="plan-btns">
+    <div class="pri">✓ İşaretli 3 commit'i at</div>
+    <div>✦ Yeniden grupla</div>
+    <div>Vazgeç</div>
+    <span class="chk">☐ Bitince push da yap</span>
+  </div>
+</div>
