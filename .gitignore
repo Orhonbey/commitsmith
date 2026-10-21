@@ -3,3 +3,4 @@ dist/
 *.vsix
 .superpowers/
 .vscode-test/
+test/vscode/smoke/dist/

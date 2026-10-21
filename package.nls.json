@@ -1,0 +1,22 @@
+{
+  "displayName": "CommitSmith",
+  "description": "Write git commit messages with your locally installed AI CLIs (Claude Code, Codex).",
+  "category": "CommitSmith",
+  "cmd.writeMessage": "Write message",
+  "cmd.writeAndCommit": "Write message and commit",
+  "cmd.smartSplit": "Smart split",
+  "cmd.push": "Push",
+  "cmd.pickModel": "Choose AI and model",
+  "config.tool": "The AI command-line tool that writes commit messages.",
+  "config.model": "Model id passed to the tool. Empty means the tool's first listed model.",
+  "config.messageLanguage": "Language of generated commit messages, for example English or Turkish.",
+  "config.includeUntracked": "Include new (untracked) files when writing a message or committing. Smart split always includes them.",
+  "config.stripAiAttribution": "Remove Co-Authored-By AI trailers, \"Generated with\" lines and session lines from generated messages.",
+  "config.summaryOnlyExtensions": "File extensions whose diff is summarised instead of sent in full (binary or generated assets).",
+  "config.maxFileDiffBytes": "Largest diff, in bytes, sent for a single file before it is summarised.",
+  "config.maxTotalBytes": "Largest total diff, in bytes, sent to the AI.",
+  "config.timeoutSeconds": "Seconds to wait for the AI before giving up.",
+  "config.models.claude": "Extra Claude model ids to offer in the picker.",
+  "config.models.codex": "Codex model ids to offer when its model cache is not available.",
+  "untrustedWorkspaces": "CommitSmith runs git and AI command-line tools, so it needs a trusted workspace."
+}

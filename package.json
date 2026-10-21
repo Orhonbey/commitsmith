@@ -20,16 +20,200 @@
   "extensionDependencies": [
     "vscode.git"
   ],
-  "contributes": {},
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "%untrustedWorkspaces%"
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "commitsmith.writeMessage",
+        "title": "%cmd.writeMessage%",
+        "category": "%category%",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "commitsmith.writeAndCommit",
+        "title": "%cmd.writeAndCommit%",
+        "category": "%category%",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "commitsmith.smartSplit",
+        "title": "%cmd.smartSplit%",
+        "category": "%category%",
+        "icon": "$(split-horizontal)"
+      },
+      {
+        "command": "commitsmith.push",
+        "title": "%cmd.push%",
+        "category": "%category%",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "commitsmith.pickModel",
+        "title": "%cmd.pickModel%",
+        "category": "%category%"
+      }
+    ],
+    "menus": {
+      "scm/title": [
+        {
+          "command": "commitsmith.writeMessage",
+          "when": "scmProvider == git",
+          "group": "navigation@1"
+        },
+        {
+          "command": "commitsmith.writeAndCommit",
+          "when": "scmProvider == git",
+          "group": "navigation@2"
+        },
+        {
+          "command": "commitsmith.smartSplit",
+          "when": "scmProvider == git",
+          "group": "navigation@3"
+        },
+        {
+          "command": "commitsmith.push",
+          "when": "scmProvider == git",
+          "group": "navigation@4"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "commitsmith.writeMessage",
+          "when": "gitOpenRepositoryCount != 0"
+        },
+        {
+          "command": "commitsmith.writeAndCommit",
+          "when": "gitOpenRepositoryCount != 0"
+        },
+        {
+          "command": "commitsmith.smartSplit",
+          "when": "gitOpenRepositoryCount != 0"
+        },
+        {
+          "command": "commitsmith.push",
+          "when": "gitOpenRepositoryCount != 0"
+        },
+        {
+          "command": "commitsmith.pickModel",
+          "when": "gitOpenRepositoryCount != 0"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "CommitSmith",
+      "properties": {
+        "commitsmith.tool": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex"
+          ],
+          "default": "claude",
+          "description": "%config.tool%"
+        },
+        "commitsmith.model": {
+          "type": "string",
+          "default": "",
+          "description": "%config.model%"
+        },
+        "commitsmith.messageLanguage": {
+          "type": "string",
+          "default": "English",
+          "description": "%config.messageLanguage%"
+        },
+        "commitsmith.includeUntracked": {
+          "type": "boolean",
+          "default": false,
+          "description": "%config.includeUntracked%"
+        },
+        "commitsmith.stripAiAttribution": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.stripAiAttribution%"
+        },
+        "commitsmith.summaryOnlyExtensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            ".asset",
+            ".prefab",
+            ".unity",
+            ".meta",
+            ".mat",
+            ".anim",
+            ".controller",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".psd",
+            ".tga",
+            ".exr",
+            ".wav",
+            ".mp3",
+            ".ogg",
+            ".fbx",
+            ".ttf",
+            ".otf",
+            ".zip",
+            ".dll"
+          ],
+          "description": "%config.summaryOnlyExtensions%"
+        },
+        "commitsmith.maxFileDiffBytes": {
+          "type": "number",
+          "default": 200000,
+          "minimum": 1000,
+          "description": "%config.maxFileDiffBytes%"
+        },
+        "commitsmith.maxTotalBytes": {
+          "type": "number",
+          "default": 400000,
+          "minimum": 1000,
+          "description": "%config.maxTotalBytes%"
+        },
+        "commitsmith.timeoutSeconds": {
+          "type": "number",
+          "default": 180,
+          "minimum": 10,
+          "description": "%config.timeoutSeconds%"
+        },
+        "commitsmith.models.claude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "%config.models.claude%"
+        },
+        "commitsmith.models.codex": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "%config.models.codex%"
+        }
+      }
+    }
+  },
   "scripts": {
     "build": "node esbuild.mjs",
     "test": "mocha --timeout 20000 --import=tsx \"test/**/*.test.ts\"",
-    "package": "vsce package"
+    "package": "vsce package",
+    "test:vscode": "node esbuild.mjs && node test/vscode/smoke/build.mjs && node test/vscode/smoke/dist/runTest.js"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "^26.6.5",
     "@types/vscode": "1.95",
+    "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^4.0.0",
     "esbuild": "^0.28.2",
     "mocha": "^12.0.3",
