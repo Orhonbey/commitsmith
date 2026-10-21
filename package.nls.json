@@ -2,6 +2,8 @@
   "displayName": "CommitSmith",
   "description": "Write git commit messages with your locally installed AI CLIs (Claude Code, Codex).",
   "category": "CommitSmith",
+  "viewContainer.title": "CommitSmith",
+  "view.panel.name": "CommitSmith",
   "cmd.writeMessage": "Write message",
   "cmd.writeAndCommit": "Write message and commit",
   "cmd.smartSplit": "Smart split",

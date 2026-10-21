@@ -10,6 +10,8 @@ import { buildMessagePrompt } from '../prompt/prompts';
 import { PlanError } from '../split/plan';
 import { readRepoContext } from '../prompt/repoContext';
 import { commitFailureText, offerIndexRefresh } from './commitFeedback';
+import { Activity } from './activity';
+import type { RecentEntry } from './panelModel';
 import { GitRepository, getRepository } from './gitApi';
 import { pushFlow } from './pushFlow';
 import { SplitHost, SplitSession } from './splitSession';
@@ -17,7 +19,6 @@ import { makePlan } from './splitPlanner';
 import { ToolPicker } from './statusBar';
 
 export class CommitSmithCommands implements vscode.Disposable, SplitHost {
-  private readonly busy = new Set<string>();
   private readonly log = vscode.window.createOutputChannel('CommitSmith');
   /** One plan tab per repository. */
   private readonly sessions = new Map<string, SplitSession>();
@@ -25,7 +26,13 @@ export class CommitSmithCommands implements vscode.Disposable, SplitHost {
   constructor(
     readonly picker: ToolPicker,
     readonly extensionUri: vscode.Uri,
+    /** The busy guard and recent list, shared with the Activity Bar panel. */
+    readonly activity: Activity = new Activity(),
   ) {}
+
+  record(entry: RecentEntry): void {
+    this.activity.record(entry);
+  }
 
   dispose(): void {
     for (const s of [...this.sessions.values()]) s.dispose();
@@ -54,23 +61,23 @@ export class CommitSmithCommands implements vscode.Disposable, SplitHost {
 
   /** The per-repository busy guard: one AI/git job at a time. Errors are reported, not thrown. */
   async guard(root: string, fn: () => Promise<void>): Promise<void> {
-    if (this.busy.has(root)) {
+    if (!this.activity.tryEnter(root)) {
       void vscode.window.showInformationMessage(vscode.l10n.t('CommitSmith is already working on this repository'));
       return;
     }
-    this.busy.add(root);
     try {
       await fn();
     } catch (e) {
       await this.report(e);
     } finally {
-      this.busy.delete(root);
+      this.activity.leave(root);
     }
   }
 
   /** Shows a localized error; `detail` (English CLI/git output) only goes to the log. */
   private async fail(text: string, detail: string, onText?: (text: string) => void): Promise<void> {
     if (detail) this.log.appendLine(detail);
+    this.record({ kind: 'failed', text });
     onText?.(text);
     const show = vscode.l10n.t('Show log');
     if ((await vscode.window.showErrorMessage(text, show)) === show) this.log.show(true);
@@ -116,6 +123,7 @@ export class CommitSmithCommands implements vscode.Disposable, SplitHost {
   async reportMissing(name: string, onText?: (text: string) => void, message?: string): Promise<void> {
     const another = vscode.l10n.t('Pick another');
     const text = message ?? vscode.l10n.t('{0} was not found', name);
+    this.record({ kind: 'failed', text });
     onText?.(text);
     if ((await vscode.window.showErrorMessage(text, another)) === another) {
       await this.pickModel();
@@ -182,15 +190,22 @@ export class CommitSmithCommands implements vscode.Disposable, SplitHost {
       if (result.failed) {
         const f = result.failed;
         this.log.appendLine(f.error);
-        if (f.committed) return this.refreshAfterCommit(root, repo, result);
+        if (f.committed) {
+          this.record({ kind: 'committed', sha: result.done[result.done.length - 1].sha.slice(0, 7), subject: out.message.split('\n')[0] });
+          return this.refreshAfterCommit(root, repo, result);
+        }
         // Nothing was committed: keep the message so a retry does not cost another AI run.
         repo.inputBox.value = out.message;
         const text = commitFailureText(f, result.done);
         if (!text) return;
-        if (f.code === 'inProgress' || f.code === 'emptyGroup') void vscode.window.showErrorMessage(text);
+        if (f.code === 'inProgress' || f.code === 'emptyGroup') {
+          this.record({ kind: 'failed', text });
+          void vscode.window.showErrorMessage(text);
+        }
         else await this.fail(text, '');
         return;
       }
+      this.record({ kind: 'committed', sha: result.done[0].sha.slice(0, 7), subject: out.message.split('\n')[0] });
       void vscode.window.showInformationMessage(vscode.l10n.t('Committed {0}', result.done[0].sha.slice(0, 7)));
       if (out.scope.leftOutUntracked.length > 0) void this.offerLeftOut(root, repo, out.scope.leftOutUntracked, arg);
     });
@@ -253,7 +268,7 @@ export class CommitSmithCommands implements vscode.Disposable, SplitHost {
 
   /** Push with its confirmations; shared by the Push command and Smart split's "Push when done". */
   pushFlow(root: string, repo: GitRepository): Promise<void> {
-    return pushFlow(root, repo, this.log);
+    return pushFlow(root, repo, this.log, (e) => this.record(e));
   }
 
   pickModel = (): Promise<void> => this.picker.pick();

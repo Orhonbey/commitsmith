@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { unlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import * as vscode from 'vscode';
 
 const COMMANDS = [
@@ -99,4 +99,29 @@ export async function run(): Promise<void> {
   await vscode.commands.executeCommand('commitsmith.push');
   const remoteTopic = execFileSync('git', ['-C', bare, 'rev-parse', 'topic']).toString().trim();
   assert.equal(remoteTopic, gitOut('rev-parse', 'HEAD'), 'commitsmith.push pushed the new commit');
+  // ---- Activity Bar panel: the container and view are contributed, the view resolves, the model is live ----
+  const contributes = ext.packageJSON.contributes;
+  assert.equal(contributes.viewsContainers.activitybar[0].id, 'commitsmith', 'the commitsmith view container is contributed');
+  assert.equal(contributes.views.commitsmith[0].id, 'commitsmith.panel', 'the commitsmith.panel view is contributed');
+  await vscode.commands.executeCommand('workbench.view.extension.commitsmith');
+  const panelState = (message?: unknown): Thenable<any> => vscode.commands.executeCommand('commitsmith.test.panel', message ? { message } : {});
+  let panel: any;
+  for (let i = 0; i < 60; i++) {
+    panel = await panelState();
+    if (panel.resolved > 0) break;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  assert.ok(panel.resolved > 0, 'the panel provider resolved its view');
+  assert.equal(panel.model.hasRepo, true);
+  assert.equal(panel.model.repo.name, basename(repoPath));
+  assert.equal(panel.model.push.kind, 'upstream', 'the push line reads the branch upstream');
+  const kinds = panel.model.recent.map((e: any) => e.kind);
+  assert.ok(kinds.includes('committed') && kinds.includes('pushed'), 'Recent lists the commits and the push; got ' + kinds.join(','));
+  assert.ok(panel.model.recent.length <= 5, 'Recent is capped at 5');
+  assert.equal(panel.model.busy, false);
+  // Forged messages are ignored: an unknown action and a repository that is not open change nothing.
+  const forged = await panelState({ type: 'run', action: 'rm -rf' });
+  assert.equal(forged.model.repo.selected, panel.model.repo.selected);
+  const forged2 = await panelState({ type: 'selectRepo', root: '/not/open' });
+  assert.equal(forged2.model.repo.selected, panel.model.repo.selected);
 }

@@ -2,7 +2,7 @@
   "name": "commitsmith",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "commitsmith",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -28,6 +28,24 @@
     }
   },
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "commitsmith",
+          "title": "%viewContainer.title%",
+          "icon": "media/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "commitsmith": [
+        {
+          "type": "webview",
+          "id": "commitsmith.panel",
+          "name": "%view.panel.name%"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "commitsmith.writeMessage",

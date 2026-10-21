@@ -72,5 +72,21 @@
   "Push failed: {0}": "Push başarısız oldu: {0}",
   "Retry index refresh": "Index yenilemeyi tekrar dene",
   "Until the index is refreshed, the committed files show as staged changes that would undo the commit.": "Index yenilenene kadar commit edilen dosyalar, commit'i geri alacak stage edilmiş değişiklikler olarak görünür.",
-  "Index refreshed": "Index yenilendi"
+  "Index refreshed": "Index yenilendi",
+  "No AI tool found": "AI aracı bulunamadı",
+  "{0} has no models": "{0} için model yok",
+  "found": "bulundu",
+  "Repository": "Depo",
+  "What will be looked at": "Nelere bakılacak",
+  "Staged ({0})": "Stage edilen ({0})",
+  "All ({0})": "Tümü ({0})",
+  "{0} new files are not included": "{0} yeni dosya dahil değil",
+  "Write message": "Mesaj yaz",
+  "Write + Commit": "Yaz + Commit",
+  "working…": "çalışıyor…",
+  "{0} · {1} commits to push": "{0} · push edilecek {1} commit",
+  "no upstream · {0} commits to push": "upstream yok · push edilecek {0} commit",
+  "Recent": "Son işlemler",
+  "Nothing yet": "Henüz bir şey yok",
+  "Committed {0} {1}": "Commit edildi: {0} {1}"
 }

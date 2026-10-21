@@ -4,6 +4,7 @@ import { createCodexTool } from '../ai/codexTool';
 import { ToolChoice, chooseTool } from '../ai/choose';
 import { detectTools } from '../ai/registry';
 import type { AiTool, ModelInfo, ToolId } from '../ai/types';
+import type { AiRow } from './panelModel';
 
 type Entry = { tool: AiTool; exe?: string; models: ModelInfo[] };
 
@@ -18,6 +19,9 @@ export class ToolPicker implements vscode.Disposable {
   private readonly item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 0);
   private entries: Entry[] = [];
   private pending: Promise<void> = Promise.resolve();
+  private readonly emitter = new vscode.EventEmitter<void>();
+  /** Fires when the detected tools or the chosen tool/model changed (the status bar was re-rendered). */
+  readonly onDidChange = this.emitter.event;
 
   /** `exeOverride` points both tools at a fake executable (extension tests only). */
   constructor(private readonly exeOverride?: string) {
@@ -27,6 +31,21 @@ export class ToolPicker implements vscode.Disposable {
 
   dispose(): void {
     this.item.dispose();
+    this.emitter.dispose();
+  }
+
+  /** The AI row of the Activity Bar panel: current tool and model, or why there is none. */
+  aiRow(): AiRow {
+    const tools = this.entries.map((e) => ({ name: e.tool.displayName, found: !!e.exe }));
+    const cur = this.current();
+    if (cur) {
+      const entry = this.entries.find((e) => e.tool === cur.tool)!;
+      const label = entry.models.find((m) => m.id === cur.model)?.label ?? cur.model;
+      return { current: `${cur.tool.displayName} · ${label}`, tools };
+    }
+    const c = this.choice();
+    if (c.kind === 'missing' || c.kind === 'noModels') return { problem: { kind: c.kind, name: this.displayName(c.id) }, tools };
+    return { problem: { kind: 'none' }, tools };
   }
 
   private cfg() {
@@ -113,6 +132,7 @@ export class ToolPicker implements vscode.Disposable {
     const lines = this.entries.map((e) =>
       e.exe ? `${e.tool.displayName}: ${e.exe}` : `${e.tool.displayName}: ${vscode.l10n.t('not found')}`,
     );
+    this.emitter.fire();
     this.item.tooltip = [vscode.l10n.t('Choose the AI and model that write commit messages'), ...lines].join('\n');
   }
 

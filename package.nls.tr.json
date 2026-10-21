@@ -2,6 +2,8 @@
   "displayName": "CommitSmith",
   "description": "Git commit mesajlarını bilgisayarına kurulu AI komut satırı araçlarıyla (Claude Code, Codex) yaz.",
   "category": "CommitSmith",
+  "viewContainer.title": "CommitSmith",
+  "view.panel.name": "CommitSmith",
   "cmd.writeMessage": "Mesaj yaz",
   "cmd.writeAndCommit": "Mesaj yaz ve commit et",
   "cmd.smartSplit": "Akıllı böl",

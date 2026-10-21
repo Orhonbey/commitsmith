@@ -3,7 +3,7 @@ import type { API, GitExtension, Repository } from './git.d';
 
 export type GitRepository = Repository;
 
-async function getApi(): Promise<API | undefined> {
+export async function getApi(): Promise<API | undefined> {
   const ext = vscode.extensions.getExtension<GitExtension>('vscode.git');
   if (!ext) return undefined;
   const exports = ext.isActive ? ext.exports : await ext.activate();

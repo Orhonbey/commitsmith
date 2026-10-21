@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { decidePush, readPushInfo } from '../push/push';
 import type { GitRepository } from './gitApi';
+import type { RecentEntry } from './panelModel';
 
 /** The git extension's errors carry git's stderr next to a generic message. */
 function pushErrorText(e: unknown): string {
@@ -14,7 +15,12 @@ function pushErrorText(e: unknown): string {
  * The push itself goes through the git extension (`repo.push`), so VS Code's credential and SSH
  * prompts work. Errors are shown, not thrown.
  */
-export async function pushFlow(root: string, repo: GitRepository, log: vscode.OutputChannel): Promise<void> {
+export async function pushFlow(
+  root: string,
+  repo: GitRepository,
+  log: vscode.OutputChannel,
+  record: (entry: RecentEntry) => void = () => {},
+): Promise<void> {
   const info = await readPushInfo(root);
   const d = decidePush(info);
   if (d.kind === 'noRemote') {
@@ -57,9 +63,12 @@ export async function pushFlow(root: string, repo: GitRepository, log: vscode.Ou
     log.appendLine(`push failed: ${text}`);
     const show = vscode.l10n.t('Show log');
     const firstLine = text.split('\n').find((l) => l.trim()) ?? '';
-    if ((await vscode.window.showErrorMessage(vscode.l10n.t('Push failed: {0}', firstLine), show)) === show) log.show(true);
+    const failed = vscode.l10n.t('Push failed: {0}', firstLine);
+    record({ kind: 'failed', text: failed });
+    if ((await vscode.window.showErrorMessage(failed, show)) === show) log.show(true);
     return;
   }
   await repo.status();
+  record({ kind: 'pushed', branch: info.branch });
   void vscode.window.showInformationMessage(vscode.l10n.t('Pushed {0}', info.branch));
 }

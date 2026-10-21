@@ -9,6 +9,7 @@ import { PlanDecorations } from './planDecorations';
 import { PlanPanel, ToWebview, webviewStrings } from './planPanel';
 import { PlanResult, PlannerEnv, makePlan } from './splitPlanner';
 import type { GitRepository } from './gitApi';
+import type { RecentEntry } from './panelModel';
 
 export interface SplitHost extends PlannerEnv {
   readonly extensionUri: vscode.Uri;
@@ -20,6 +21,8 @@ export interface SplitHost extends PlannerEnv {
   /** After a commit whose index refresh failed: offers to retry it (modal). */
   refreshAfterCommit(root: string, repo: GitRepository, result: CommitResult): Promise<void>;
   logLine(text: string): void;
+  /** Adds an entry to the Recent list of the Activity Bar panel. */
+  record(entry: RecentEntry): void;
 }
 
 /** One open "Commit plan" tab: its state, the AI regroup, the commit run and the SCM badges. */
@@ -164,7 +167,10 @@ export class SplitSession implements vscode.Disposable {
       this.state = { ...this.state, used: true };
       ok = !result.failed;
       const f = result.failed;
+      for (const d of result.done) this.host.record({ kind: 'committed', sha: d.sha.slice(0, 7), subject: d.message.split('\n')[0] });
       if (f) this.host.logLine(f.error);
+      const failedText = f ? commitFailureText(f, result.done) : undefined;
+      if (failedText && !f?.committed) this.host.record({ kind: 'failed', text: failedText });
       // The tab shows the same localized texts as Write + Commit; git's raw output is in the log.
       this.panel.post({ type: 'result', result, failedText: f ? commitFailureText(f, result.done) ?? '' : undefined });
       if (f?.committed) await this.host.refreshAfterCommit(this.root, this.repo, result);
