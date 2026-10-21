@@ -9,7 +9,7 @@ export type CommitGroup = { message: string; paths: string[] };
 
 export type CommitResult = {
   done: { sha: string; message: string }[];
-  failed?: { index: number; message: string; error: string; committed?: boolean };
+  failed?: { index: number; message: string; error: string; committed?: boolean; code?: 'inProgress' | 'emptyGroup' | 'cancelled' };
 };
 
 /** Env for commands that act on the user's real index: never inherit a GIT_INDEX_FILE. */
@@ -34,9 +34,9 @@ export async function commitGroups(
   signal?: AbortSignal,
 ): Promise<CommitResult> {
   const done: CommitResult['done'] = [];
-  const fail = (index: number, error: string): CommitResult => ({
+  const fail = (index: number, error: string, code?: NonNullable<CommitResult['failed']>['code']): CommitResult => ({
     done,
-    failed: { index, message: groups[index].message, error },
+    failed: { index, message: groups[index].message, error, code },
   });
 
   let gitDir: string;
@@ -47,13 +47,13 @@ export async function commitGroups(
   }
 
   if (groups.length > 0 && IN_PROGRESS.some((n) => existsSync(join(gitDir, n)))) {
-    return fail(0, 'A merge, cherry-pick, revert or rebase is in progress — finish it first.');
+    return fail(0, 'A merge, cherry-pick, revert or rebase is in progress — finish it first.', 'inProgress');
   }
 
   for (let i = 0; i < groups.length; i++) {
-    if (signal?.aborted) return fail(i, 'cancelled');
+    if (signal?.aborted) return fail(i, 'cancelled', 'cancelled');
     const group = groups[i];
-    if (group.paths.length === 0) return fail(i, 'This group has no files.');
+    if (group.paths.length === 0) return fail(i, 'This group has no files.', 'emptyGroup');
     const tmp = join(gitDir, `commitsmith-index-${randomBytes(8).toString('hex')}`);
     const env = { GIT_INDEX_FILE: tmp };
     const pathsInput = pathspecInput(group.paths);

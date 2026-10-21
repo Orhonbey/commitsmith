@@ -28,7 +28,7 @@ export async function getRepository(arg: unknown): Promise<{ root: string; repo:
   if (!repo && repos.length === 1) repo = repos[0];
   if (!repo) {
     const picked = await vscode.window.showQuickPick(
-      repos.map((r) => ({ label: r.rootUri.fsPath.split(/[\/]/).pop() || r.rootUri.fsPath, description: r.rootUri.fsPath, repo: r })),
+      repos.map((r) => ({ label: r.rootUri.fsPath.split(/[\\/]/).pop() || r.rootUri.fsPath, description: r.rootUri.fsPath, repo: r })),
       { placeHolder: vscode.l10n.t('Choose a repository') },
     );
     repo = picked?.repo;

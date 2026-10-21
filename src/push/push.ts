@@ -6,6 +6,8 @@ export type PushInfo = {
   ahead: number;
   defaultBranch: string;
   remotes: string[];
+  /** True when HEAD has no commit yet (as opposed to a detached HEAD). */
+  unborn?: boolean;
 };
 
 export type PushDecision =
@@ -36,7 +38,7 @@ export async function readPushInfo(root: string): Promise<PushInfo> {
   const br = await runGit(root, ['symbolic-ref', '--short', '-q', 'HEAD'], { allowFail: true });
   const head = await runGit(root, ['rev-parse', '--verify', '--quiet', 'HEAD'], { allowFail: true });
   // Unborn HEAD counts as "not on a branch": there is nothing to push.
-  if (head.code !== 0) return { branch: '', ahead: 0, defaultBranch, remotes };
+  if (head.code !== 0) return { branch: '', ahead: 0, defaultBranch, remotes, unborn: true };
   const branch = br.code === 0 ? br.stdout.trim() : '';
 
   const up = await runGit(root, ['rev-parse', '--abbrev-ref', '@{u}'], { allowFail: true });
@@ -45,7 +47,7 @@ export async function readPushInfo(root: string): Promise<PushInfo> {
     ? ['rev-list', '--count', '@{u}..HEAD']
     : ['rev-list', '--count', 'HEAD', '--not', '--remotes'];
   const ahead = parseInt((await runGit(root, countArgs)).stdout.trim(), 10) || 0;
-  return { branch, upstream, ahead, defaultBranch, remotes };
+  return { branch, upstream, ahead, defaultBranch, remotes, unborn: false };
 }
 
 export function decidePush(info: PushInfo): PushDecision {
@@ -55,7 +57,10 @@ export function decidePush(info: PushInfo): PushDecision {
     return { kind: 'setUpstream', remote: info.remotes.includes('origin') ? 'origin' : info.remotes[0] };
   }
   if (info.ahead === 0) return { kind: 'nothing' };
-  return { kind: 'push', confirmDefault: info.branch === info.defaultBranch };
+  // The push lands on the upstream's branch, which can differ from the local branch name.
+  const remote = info.remotes.find((r) => info.upstream!.startsWith(r + '/'));
+  const target = remote ? info.upstream.slice(remote.length + 1) : info.branch;
+  return { kind: 'push', confirmDefault: target === info.defaultBranch };
 }
 
 export async function runPush(

@@ -6,14 +6,20 @@ import type { AiTool, ModelInfo } from '../ai/types';
 
 type Entry = { tool: AiTool; exe?: string; models: ModelInfo[] };
 
-/** Test hook: point both tools at a fake executable (used by the extension smoke test). */
-const EXE_OVERRIDE = process.env.COMMITSMITH_EXE_OVERRIDE;
+/** Built-in model hints, as literals so they can be localized. */
+function localizedDetail(detail: string | undefined): string | undefined {
+  if (detail === 'fastest') return vscode.l10n.t('fastest');
+  if (detail === 'most capable') return vscode.l10n.t('most capable');
+  return detail;
+}
 
 export class ToolPicker implements vscode.Disposable {
   private readonly item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 0);
   private entries: Entry[] = [];
+  private pending: Promise<void> = Promise.resolve();
 
-  constructor() {
+  /** `exeOverride` points both tools at a fake executable (extension tests only). */
+  constructor(private readonly exeOverride?: string) {
     this.item.command = 'commitsmith.pickModel';
     this.item.show();
   }
@@ -26,12 +32,22 @@ export class ToolPicker implements vscode.Disposable {
     return vscode.workspace.getConfiguration('commitsmith');
   }
 
+  /** Resolves when the latest detection run has finished. */
+  whenReady(): Promise<void> {
+    return this.pending;
+  }
+
   /** Re-detects the tools with fresh instances (Codex detection is cached per instance). */
-  async refresh(): Promise<void> {
+  refresh(): Promise<void> {
+    this.pending = this.load();
+    return this.pending;
+  }
+
+  private async load(): Promise<void> {
     const cfg = this.cfg();
     const tools = [
-      createClaudeTool({ exeOverride: EXE_OVERRIDE }),
-      createCodexTool({ exeOverride: EXE_OVERRIDE }),
+      createClaudeTool({ exeOverride: this.exeOverride }),
+      createCodexTool({ exeOverride: this.exeOverride }),
     ];
     const detected = await detectTools(tools);
     this.entries = await Promise.all(
@@ -53,12 +69,12 @@ export class ToolPicker implements vscode.Disposable {
   /** The tool and model to use: the configured ones, else the first detected tool's first model. */
   current(): { tool: AiTool; model: string } | undefined {
     const cfg = this.cfg();
-    const found = this.entries.filter((e) => e.exe);
+    const found = this.entries.filter((e) => e.exe && e.models.length > 0);
     const entry = found.find((e) => e.tool.id === cfg.get<string>('tool')) ?? found[0];
     if (!entry) return undefined;
     const saved = cfg.get<string>('model', '');
-    const model = entry.tool.id === cfg.get<string>('tool') && saved ? saved : entry.models[0]?.id;
-    return model ? { tool: entry.tool, model } : undefined;
+    const model = entry.tool.id === cfg.get<string>('tool') && saved ? saved : entry.models[0].id;
+    return { tool: entry.tool, model };
   }
 
   private render(): void {
@@ -87,11 +103,14 @@ export class ToolPicker implements vscode.Disposable {
         items.push({ label: '$(circle-slash) ' + vscode.l10n.t('not found') });
         continue;
       }
+      if (e.models.length === 0) {
+        items.push({ label: '$(info) ' + vscode.l10n.t('No models found. Add some in commitsmith.models.{0}', e.tool.id) });
+      }
       for (const m of e.models) {
         const isCurrent = cur?.tool === e.tool && cur.model === m.id;
         items.push({
           label: (isCurrent ? '✓ ' : '') + m.label,
-          description: m.detail,
+          description: localizedDetail(m.detail),
           toolId: e.tool.id,
           model: m.id,
         });

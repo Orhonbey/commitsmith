@@ -52,6 +52,25 @@ describe('push', () => {
     assert.deepEqual(decidePush(i), { kind: 'push', confirmDefault: true });
   });
 
+  it('confirmDefault follows the upstream target: feature tracking origin/main confirms', () => {
+    assert.deepEqual(decidePush(info({ branch: 'feature', upstream: 'origin/main' })), { kind: 'push', confirmDefault: true });
+    assert.deepEqual(decidePush(info({ branch: 'main', upstream: 'origin/feature' })), { kind: 'push', confirmDefault: false });
+  });
+
+  it('unborn HEAD is flagged, detached HEAD is not', async () => {
+    const empty = await createTempRepo();
+    try {
+      const i = await readPushInfo(empty.root);
+      assert.equal(i.branch, '');
+      assert.equal(i.unborn, true);
+    } finally {
+      await empty.cleanup();
+    }
+    await withOrigin();
+    await repo.git('checkout', '--detach');
+    assert.equal((await readPushInfo(repo.root)).unborn, false);
+  });
+
   it('feature branch no confirm', async () => {
     await withOrigin();
     await repo.git('checkout', '-b', 'feat/x');

@@ -53,20 +53,35 @@ export class CommitSmithCommands implements vscode.Disposable {
     }
   }
 
+  /** Shows a localized error; `detail` (English CLI/git output) only goes to the log. */
+  private async fail(text: string, detail: string): Promise<void> {
+    if (detail) this.log.appendLine(detail);
+    const show = vscode.l10n.t('Show log');
+    if ((await vscode.window.showErrorMessage(text, show)) === show) this.log.show(true);
+  }
+
   private async report(e: unknown): Promise<void> {
     if (e instanceof AiError) {
       if (e.kind === 'cancelled') return;
       if (e.kind === 'notFound') return this.reportMissing(this.picker.current()?.tool.displayName ?? 'AI');
-      if (e.stderrTail) this.log.appendLine(e.stderrTail);
-      const text = vscode.l10n.t('The AI failed ({0}): {1}', e.kind, e.message);
-      if (!e.stderrTail) return void vscode.window.showErrorMessage(text);
-      const show = vscode.l10n.t('Show log');
-      if ((await vscode.window.showErrorMessage(text, show)) === show) this.log.show(true);
-      return;
+      const detail = [`${e.kind}: ${e.message}`, e.stderrTail].filter(Boolean).join('\n');
+      let text: string;
+      if (e.kind === 'timeout') {
+        text = vscode.l10n.t('The AI did not answer within {0} seconds', this.cfg().get<number>('timeoutSeconds', 180));
+      } else if (e.kind === 'exit') {
+        text = vscode.l10n.t('The AI command failed. Check that you are signed in; the log has details');
+      } else {
+        text = vscode.l10n.t('The AI returned an answer CommitSmith could not read');
+      }
+      return this.fail(text, detail);
     }
-    const msg = e instanceof GitError ? e.stderr.trim() || e.message : e instanceof Error ? e.message : String(e);
-    this.log.appendLine(msg);
-    void vscode.window.showErrorMessage(msg);
+    if (e instanceof GitError) {
+      return this.fail(vscode.l10n.t('A git command failed'), e.stderr.trim() || e.message);
+    }
+    return this.fail(
+      vscode.l10n.t('CommitSmith hit an unexpected error'),
+      e instanceof Error ? e.stack ?? e.message : String(e),
+    );
   }
 
   private async reportMissing(name: string): Promise<void> {
@@ -78,6 +93,7 @@ export class CommitSmithCommands implements vscode.Disposable {
 
   /** Scope -> diff -> prompt -> AI -> cleaned message. Never touches the index. */
   private async generate(root: string): Promise<{ message: string; scope: Scope } | undefined> {
+    await this.picker.whenReady();
     const cur = this.picker.current();
     if (!cur) {
       await this.reportMissing('AI');
@@ -109,7 +125,10 @@ export class CommitSmithCommands implements vscode.Disposable {
       },
     );
     const message = cleanMessage(raw, cfg.get<boolean>('stripAiAttribution', true));
-    if (!message) throw new AiError('badOutput', vscode.l10n.t('The AI returned an empty message'));
+    if (!message) {
+      await this.fail(vscode.l10n.t('The AI returned an empty message'), 'badOutput: empty message');
+      return undefined;
+    }
     return { message, scope };
   }
 
@@ -128,14 +147,20 @@ export class CommitSmithCommands implements vscode.Disposable {
       await repo.status();
       if (result.failed) {
         const f = result.failed;
+        this.log.appendLine(f.error);
         if (f.committed) {
           const sha = result.done[result.done.length - 1]?.sha.slice(0, 7) ?? '';
           void vscode.window.showWarningMessage(
-            vscode.l10n.t('Committed {0}, but refreshing the index failed: {1}', sha, f.error),
+            vscode.l10n.t('Committed {0}, but refreshing the index failed. The log has details', sha),
           );
-        } else {
-          this.log.appendLine(f.error);
-          void vscode.window.showErrorMessage(vscode.l10n.t('Commit failed: {0}', f.error));
+        } else if (f.code === 'inProgress') {
+          void vscode.window.showErrorMessage(
+            vscode.l10n.t('A merge, cherry-pick, revert or rebase is in progress. Finish it first'),
+          );
+        } else if (f.code === 'emptyGroup') {
+          void vscode.window.showErrorMessage(vscode.l10n.t('There are no files to commit'));
+        } else if (f.code !== 'cancelled') {
+          await this.fail(vscode.l10n.t('Commit failed. The log has details'), '');
         }
         return;
       }
@@ -147,7 +172,7 @@ export class CommitSmithCommands implements vscode.Disposable {
     const stage = vscode.l10n.t('Stage them');
     const split = vscode.l10n.t('Smart split');
     const choice = await vscode.window.showInformationMessage(
-      vscode.l10n.t('{0} new files were not included', paths.length),
+      vscode.l10n.t('New files not included: {0}', paths.length),
       stage,
       split,
     );
@@ -177,7 +202,11 @@ export class CommitSmithCommands implements vscode.Disposable {
       }
       if (d.kind === 'nothing') {
         void vscode.window.showInformationMessage(
-          info.branch ? vscode.l10n.t('Nothing to push') : vscode.l10n.t('Not on a branch'),
+          info.branch
+            ? vscode.l10n.t('Nothing to push')
+            : info.unborn
+              ? vscode.l10n.t('Nothing to push yet. Make a first commit')
+              : vscode.l10n.t('Not on a branch'),
         );
         return;
       }

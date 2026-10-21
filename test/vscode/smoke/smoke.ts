@@ -10,7 +10,6 @@ const COMMANDS = [
   'commitsmith.push',
   'commitsmith.pickModel',
 ];
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function run(): Promise<void> {
   const ext = vscode.extensions.getExtension('orhonbey.commitsmith');
@@ -23,16 +22,12 @@ export async function run(): Promise<void> {
 
   const git = vscode.extensions.getExtension<any>('vscode.git')!.exports.getAPI(1);
   const repoPath = process.env.SMOKE_REPO!;
-  for (let i = 0; i < 40 && git.repositories.length === 0; i++) await sleep(250);
+  for (let i = 0; i < 40 && git.repositories.length === 0; i++) await new Promise((r) => setTimeout(r, 250));
   const repo = git.repositories[0];
   assert.ok(repo, 'the git extension opened the temp repository');
 
-  let value = '';
-  for (let attempt = 0; attempt < 8 && !value; attempt++) {
-    await vscode.commands.executeCommand('commitsmith.writeMessage');
-    value = repo.inputBox.value;
-    if (!value) await sleep(1000); // tool detection may still be running right after activation
-  }
+  await vscode.commands.executeCommand('commitsmith.writeMessage');
+  const value: string = repo.inputBox.value;
   assert.equal(value, 'feat: smoke test message');
 
   const staged = execFileSync('git', ['-C', repoPath, 'diff', '--cached', '--name-only']).toString().trim();

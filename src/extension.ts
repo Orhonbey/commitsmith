@@ -3,7 +3,9 @@ import { CommitSmithCommands } from './vscode/commands';
 import { ToolPicker } from './vscode/statusBar';
 
 export function activate(context: vscode.ExtensionContext): void {
-  const picker = new ToolPicker();
+  // The fake-CLI override is honoured only when the extension runs under test or development.
+  const underTest = context.extensionMode !== vscode.ExtensionMode.Production;
+  const picker = new ToolPicker(underTest ? process.env.COMMITSMITH_EXE_OVERRIDE : undefined);
   const commands = new CommitSmithCommands(picker);
   context.subscriptions.push(
     picker,
