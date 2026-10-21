@@ -57,7 +57,13 @@ export function execCli(
       ? spawn(
           process.env.ComSpec || systemExe('cmd.exe'),
           ['/d', '/s', '/c', `"${[escMeta(exe), ...args.map(quoteForCmd)].join(' ')}"`],
-          { cwd: opts.cwd, windowsHide: true, windowsVerbatimArguments: true },
+          {
+            cwd: opts.cwd,
+            windowsHide: true,
+            windowsVerbatimArguments: true,
+            // cmd.exe would otherwise look in the cwd (the user's repo) first for the shim's `node`.
+            env: { ...process.env, NoDefaultCurrentDirectoryInExePath: '1' },
+          },
         )
       : spawn(exe, args, { cwd: opts.cwd, windowsHide: true, detached: !isWin });
 

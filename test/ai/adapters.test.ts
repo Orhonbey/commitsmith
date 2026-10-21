@@ -194,4 +194,15 @@ describe('ai adapters', () => {
     assert.equal(res[0].exe, shim);
     assert.equal(res[1].exe, undefined);
   });
+  (isWin ? it : it.skip)('a .cmd shim never runs a node.bat / node.exe planted in the repository', async () => {
+    // The parent process may already set it; the extension host usually does not.
+    setEnv('NoDefaultCurrentDirectoryInExePath', undefined);
+    const repoDir = join(dir, 'untrusted repo');
+    mkdirSync(repoDir);
+    const marker = join(dir, 'planted-ran');
+    writeFileSync(join(repoDir, 'node.bat'), `@echo off\r\necho ran> "${marker}"\r\n`);
+    const out = await createClaudeTool({ exeOverride: shim }).run('hello prompt', runOpts({ cwd: repoDir }));
+    assert.ok(!existsSync(marker), 'the planted node.bat ran');
+    assert.ok(out.length > 0);
+  });
 });
