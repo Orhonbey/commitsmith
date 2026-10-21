@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, it } from 'mocha';
-import { commitGroups, seedTempIndex } from '../../src/git/commitEngine';
+import { commitGroups, refreshIndex, seedTempIndex } from '../../src/git/commitEngine';
 import { runGit } from '../../src/git/gitRunner';
 import { createTempRepo, type TempRepo } from '../helpers/tempRepo';
 
@@ -70,15 +70,43 @@ describe('commitEngine', () => {
     assert.equal((await repo.git('status', '--porcelain')).trim(), '');
   });
 
-  it('failed index refresh is reported as committed', async () => {
+  it('failed index refresh is reported as committed, with the paths to refresh again', async () => {
     repo.write('.git/hooks/post-commit', '#!/bin/sh\ntouch "$(git rev-parse --absolute-git-dir)/index.lock"\nexit 0\n');
     chmodSync(join(repo.root, '.git', 'hooks', 'post-commit'), 0o755);
     repo.write('a.txt', 'a2\n');
-    const res = await commitGroups(repo.root, 'all', [{ message: 'm', paths: ['a.txt'] }]);
+    const res = await commitGroups(repo.root, 'all', [{ message: 'm', paths: ['a.txt'] }], undefined, [10, 10]);
     assert.equal(res.done.length, 1);
     assert.equal(res.failed?.committed, true);
     assert.equal(res.failed?.index, 0);
+    assert.deepEqual(res.failed?.resetPaths, ['a.txt']);
+    // The real index still has the old a.txt: a staged revert until the refresh runs again.
+    assert.equal((await repo.git('diff', '--cached', '--name-only')).trim(), 'a.txt');
     rmSync(join(repo.root, '.git', 'index.lock'), { force: true });
+    assert.equal((await refreshIndex(repo.root, res.failed!.resetPaths!)).ok, true);
+    assert.equal((await repo.git('status', '--porcelain')).trim(), '');
+  });
+
+  it('a briefly held index.lock is retried with backoff', async () => {
+    const lock = join(repo.root, '.git', 'index.lock');
+    repo.write('.git/hooks/post-commit', '#!/bin/sh\ntouch "$(git rev-parse --absolute-git-dir)/index.lock"\nexit 0\n');
+    chmodSync(join(repo.root, '.git', 'hooks', 'post-commit'), 0o755);
+    repo.write('a.txt', 'a2\n');
+    // Another tool lets go of the lock a moment after the commit.
+    let released = false;
+    const poll = setInterval(() => {
+      if (!released && existsSync(lock)) {
+        released = true;
+        setTimeout(() => rmSync(lock, { force: true }), 150);
+      }
+    }, 10);
+    try {
+      const res = await commitGroups(repo.root, 'all', [{ message: 'm', paths: ['a.txt'] }]);
+      assert.equal(res.failed, undefined, res.failed?.error ?? '');
+    } finally {
+      clearInterval(poll);
+    }
+    assert.ok(released);
+    assert.equal((await repo.git('status', '--porcelain')).trim(), '');
   });
 
   it('refuses while a merge is in progress', async () => {
@@ -167,7 +195,7 @@ describe('commitEngine', () => {
     assert.equal(res.done.length, 1);
     assert.equal(res.failed?.index, 1);
     assert.equal(res.failed?.message, 'm2');
-    assert.ok(res.failed?.error.includes('HOOK-SAYS-NO'), res.failed?.error);
+    assert.ok(res.failed?.error.includes('HOOK-SAYS-NO'), res.failed?.error ?? '');
     const status = (await repo.git('status', '--porcelain')).split('\n').filter(Boolean);
     assert.deepEqual(status.sort(), [' M b.txt', ' M c.txt']);
     assert.equal((await repo.git('diff', '--cached', '--name-only')).trim(), '');
@@ -256,7 +284,7 @@ describe('commitEngine', () => {
       await runGit(repo.root, ['update-index', '-z', '--index-info'], { input: stages });
       repo.write('b.txt', 'b2\n');
       const res = await commitGroups(repo.root, 'all', [{ message: 'm', paths: ['b.txt'] }]);
-      assert.equal(res.failed, undefined, res.failed?.error);
+      assert.equal(res.failed, undefined, res.failed?.error ?? '');
       assert.equal((await repo.git('show', 'HEAD:b.txt')).trim(), 'b2');
       assert.deepEqual((await repo.git('ls-tree', '-r', '--name-only', 'HEAD')).trim().split('\n'), ['a.txt', 'b.txt', 'c.txt']);
       assert.ok((await repo.git('ls-files', '-u')).includes('a.txt'), 'the real index keeps its unmerged entries');
@@ -288,7 +316,7 @@ describe('commitEngine', () => {
         const engine = await best(async (k) => {
           big.write('x.txt', `engine ${k}\n`);
           const r = await commitGroups(big.root, 'all', [{ message: 'engine', paths: ['x.txt'] }]);
-          assert.equal(r.failed, undefined, r.failed?.error);
+          assert.equal(r.failed, undefined, r.failed?.error ?? '');
         });
         // A few extra git processes are fine; re-hashing the tree (about 10x here) is not.
         assert.ok(engine < plain * 6, `engine ${engine.toFixed(0)} ms vs plain commit ${plain.toFixed(0)} ms`);

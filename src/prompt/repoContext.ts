@@ -14,14 +14,14 @@ const TOTAL_CAP = 16_000;
 
 export async function readRepoContext(root: string): Promise<RepoContext> {
   let branch = '';
-  const head = await runGit(root, ['rev-parse', '--abbrev-ref', 'HEAD'], { allowFail: true });
+  const head = await runGit(root, ['rev-parse', '--abbrev-ref', 'HEAD'], { allowFail: true, readOnly: true });
   if (head.code === 0) branch = head.stdout.trim();
   else {
-    const sym = await runGit(root, ['symbolic-ref', '--short', 'HEAD'], { allowFail: true });
+    const sym = await runGit(root, ['symbolic-ref', '--short', 'HEAD'], { allowFail: true, readOnly: true });
     if (sym.code === 0) branch = sym.stdout.trim();
   }
 
-  const log = await runGit(root, ['log', '-20', '--format=%s'], { allowFail: true });
+  const log = await runGit(root, ['log', '-20', '--format=%s'], { allowFail: true, readOnly: true });
   const recentSubjects = log.code === 0 ? log.stdout.split('\n').map((l) => l.trim()).filter(Boolean) : [];
 
   const rules: RepoContext['rules'] = [];

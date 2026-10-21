@@ -44,6 +44,6 @@ function entry(xy: string, path: string): FileStatus {
 }
 
 export async function readStatus(root: string): Promise<FileStatus[]> {
-  const { stdout } = await runGit(root, ['status', '--porcelain=v2', '-z', '--untracked-files=all']);
+  const { stdout } = await runGit(root, ['status', '--porcelain=v2', '-z', '--untracked-files=all'], { readOnly: true });
   return parseStatus(stdout);
 }

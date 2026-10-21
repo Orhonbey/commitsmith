@@ -39,14 +39,19 @@ const FETCH_PARALLELISM = 8;
 type Numstat = { added: number; removed: number; binary: boolean };
 
 async function emptyTreeSha(root: string): Promise<string> {
-  const r = await runGit(root, ['hash-object', '-t', 'tree', '--stdin'], { input: '' });
+  const r = await runGit(root, ['hash-object', '-t', 'tree', '--stdin'], { input: '', readOnly: true });
   return r.stdout.trim();
 }
 
-async function diffBase(root: string, kind: Scope['kind']): Promise<string[]> {
-  if (kind === 'staged') return ['diff', '--cached'];
-  const head = await runGit(root, ['rev-parse', '--verify', '-q', 'HEAD'], { allowFail: true });
-  return head.code === 0 ? ['diff', 'HEAD'] : ['diff', await emptyTreeSha(root)];
+/**
+ * `diff-index [--cached] <flags> <tree>` builder. Plumbing on purpose: porcelain `git diff` may take
+ * index.lock to refresh stat data (whatever GIT_OPTIONAL_LOCKS says) and race the user's own git.
+ */
+async function diffBase(root: string, kind: Scope['kind']): Promise<(extra: string[]) => string[]> {
+  const head = await runGit(root, ['rev-parse', '--verify', '-q', 'HEAD'], { allowFail: true, readOnly: true });
+  const tree = head.code === 0 ? 'HEAD' : await emptyTreeSha(root);
+  const cached = kind === 'staged' ? ['--cached'] : [];
+  return (extra) => ['diff-index', ...cached, ...DIFF_FLAGS, ...extra, tree];
 }
 
 /** Parses `git diff --numstat -z`; keyed by the new path. */
@@ -132,10 +137,10 @@ export async function collectDiff(root: string, scope: Scope, opts: DiffOptions)
   const tracked = scope.files.filter((f) => !isUntracked(f));
 
   const numstat = new Map<string, Numstat>();
-  let base: string[] = [];
+  let diffArgs: (extra: string[]) => string[] = () => [];
   if (tracked.length > 0) {
-    base = await diffBase(root, scope.kind);
-    const ns = await runGit(root, [...base, ...DIFF_FLAGS, '--numstat', '-z']);
+    diffArgs = await diffBase(root, scope.kind);
+    const ns = await runGit(root, diffArgs(['--numstat', '-z']), { readOnly: true });
     for (const [k, v] of parseNumstat(ns.stdout)) numstat.set(k, v);
   }
   const summaryExt = new Set(opts.summaryOnlyExtensions.map((e) => e.toLowerCase()));
@@ -181,7 +186,7 @@ export async function collectDiff(root: string, scope: Scope, opts: DiffOptions)
       const d = toFetch[next++];
       const paths = d.origPath ? [d.origPath, d.path] : [d.path];
       try {
-        d.patch = (await runGit(root, [...base, ...DIFF_FLAGS, '--', ...paths])).stdout;
+        d.patch = (await runGit(root, [...diffArgs(['-p']), '--', ...paths], { readOnly: true })).stdout;
       } catch {
         d.summarized = true;
       }

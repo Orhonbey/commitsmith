@@ -15,6 +15,8 @@ export interface RunGitOptions {
   input?: string | Buffer;
   env?: NodeJS.ProcessEnv;
   allowFail?: boolean;
+  /** Read-only command: GIT_OPTIONAL_LOCKS=0, so it never takes index.lock to refresh the index. */
+  readOnly?: boolean;
 }
 
 export interface RunGitResult {
@@ -28,6 +30,7 @@ const MAX_BUFFER = 64 * 1024 * 1024;
 export function runGit(cwd: string, args: string[], opts: RunGitOptions = {}): Promise<RunGitResult> {
   const fullArgs = ['-c', 'core.quotePath=false', ...args];
   const env: NodeJS.ProcessEnv = { ...process.env, ...opts.env, GIT_LITERAL_PATHSPECS: '1', LC_ALL: 'C' };
+  if (opts.readOnly) env.GIT_OPTIONAL_LOCKS = '0';
   // An explicit `undefined` in opts.env removes the inherited variable.
   for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
   return new Promise((resolve, reject) => {

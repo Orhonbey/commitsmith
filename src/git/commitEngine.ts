@@ -9,11 +9,43 @@ export type CommitGroup = { message: string; paths: string[] };
 
 export type CommitResult = {
   done: { sha: string; message: string }[];
-  failed?: { index: number; message: string; error: string; committed?: boolean; code?: 'inProgress' | 'emptyGroup' | 'cancelled' };
+  failed?: {
+    index: number;
+    message: string;
+    error: string;
+    /** The commit landed but the real index was not refreshed: retry with refreshIndex(resetPaths). */
+    committed?: boolean;
+    resetPaths?: string[];
+    code?: 'inProgress' | 'emptyGroup' | 'cancelled';
+  };
 };
 
 /** Env for commands that act on the user's real index: never inherit a GIT_INDEX_FILE. */
 const REAL_INDEX_ENV: NodeJS.ProcessEnv = { GIT_INDEX_FILE: undefined };
+
+/** Waits between retries of the post-commit index refresh while another process holds index.lock. */
+export const RESET_BACKOFF_MS = [100, 200, 400, 800, 1600];
+
+/**
+ * Makes the real index entries of `paths` equal HEAD (`git reset`). Retries with backoff while
+ * index.lock is held by another process (an editor's background git, a file watcher).
+ */
+export async function refreshIndex(
+  root: string,
+  paths: string[],
+  backoffMs: number[] = RESET_BACKOFF_MS,
+): Promise<{ ok: boolean; stderr: string }> {
+  for (let attempt = 0; ; attempt++) {
+    const reset = await runGit(root, ['reset', '-q', '--pathspec-from-file=-', '--pathspec-file-nul'], {
+      env: REAL_INDEX_ENV,
+      input: pathspecInput(paths),
+      allowFail: true,
+    });
+    if (reset.code === 0) return { ok: true, stderr: '' };
+    if (attempt >= backoffMs.length || !reset.stderr.includes('index.lock')) return { ok: false, stderr: reset.stderr.trim() };
+    await new Promise((r) => setTimeout(r, backoffMs[attempt]));
+  }
+}
 
 const IN_PROGRESS = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply'];
 
@@ -35,7 +67,7 @@ export async function seedTempIndex(root: string, tmp: string, hasHead: boolean)
     return;
   }
   try {
-    const real = (await runGit(root, ['rev-parse', '--git-path', 'index'], { env: REAL_INDEX_ENV })).stdout.trim();
+    const real = (await runGit(root, ['rev-parse', '--git-path', 'index'], { env: REAL_INDEX_ENV, readOnly: true })).stdout.trim();
     await copyFile(resolve(root, real), tmp);
     await runGit(root, ['read-tree', '-m', 'HEAD'], { env });
     return;
@@ -55,6 +87,7 @@ export async function commitGroups(
   kind: Scope['kind'],
   groups: CommitGroup[],
   signal?: AbortSignal,
+  resetBackoffMs: number[] = RESET_BACKOFF_MS,
 ): Promise<CommitResult> {
   const done: CommitResult['done'] = [];
   const fail = (index: number, error: string, code?: NonNullable<CommitResult['failed']>['code']): CommitResult => ({
@@ -64,7 +97,7 @@ export async function commitGroups(
 
   let gitDir: string;
   try {
-    gitDir = (await runGit(root, ['rev-parse', '--absolute-git-dir'])).stdout.trim();
+    gitDir = (await runGit(root, ['rev-parse', '--absolute-git-dir'], { readOnly: true })).stdout.trim();
   } catch (e) {
     return groups.length > 0 ? fail(0, describeError(e)) : { done };
   }
@@ -81,12 +114,12 @@ export async function commitGroups(
     const env = { GIT_INDEX_FILE: tmp };
     const pathsInput = pathspecInput(group.paths);
     try {
-      const hasHead = (await runGit(root, ['rev-parse', '--verify', '-q', 'HEAD^{commit}'], { env: REAL_INDEX_ENV, allowFail: true })).code === 0;
+      const hasHead = (await runGit(root, ['rev-parse', '--verify', '-q', 'HEAD^{commit}'], { env: REAL_INDEX_ENV, allowFail: true, readOnly: true })).code === 0;
       await seedTempIndex(root, tmp, hasHead);
 
       if (kind === 'staged') {
         const wanted = new Set(group.paths);
-        const real = (await runGit(root, ['ls-files', '-s', '-z'], { env: REAL_INDEX_ENV })).stdout;
+        const real = (await runGit(root, ['ls-files', '-s', '-z'], { env: REAL_INDEX_ENV, readOnly: true })).stdout;
         const entries: string[] = [];
         const present = new Set<string>();
         for (const rec of real.split('\0')) {
@@ -118,24 +151,22 @@ export async function commitGroups(
       if (commit.code !== 0) {
         return fail(i, `${commit.stderr}\n${commit.stdout}`.trim() || `git commit failed (${commit.code})`);
       }
-      const sha = (await runGit(root, ['rev-parse', 'HEAD'], { env: REAL_INDEX_ENV })).stdout.trim();
+      const sha = (await runGit(root, ['rev-parse', 'HEAD'], { env: REAL_INDEX_ENV, readOnly: true })).stdout.trim();
       done.push({ sha, message: group.message });
 
       // Real index: every path the commit touched (hooks may add more) now equals the new HEAD.
       const touched = (
         await runGit(root, ['diff-tree', '-r', '-z', '--name-only', '--no-commit-id', '--root', 'HEAD'], {
           env: REAL_INDEX_ENV,
+          readOnly: true,
         })
       ).stdout.split('\0');
       const resetPaths = [...new Set([...group.paths, ...touched.filter(Boolean)])];
-      const reset = await runGit(root, ['reset', '-q', '--pathspec-from-file=-', '--pathspec-file-nul'], {
-        env: REAL_INDEX_ENV,
-        input: pathspecInput(resetPaths),
-        allowFail: true,
-      });
-      if (reset.code !== 0) {
-        const f = fail(i, `committed ${sha}, but refreshing the index failed: ${reset.stderr.trim()}`);
+      const reset = await refreshIndex(root, resetPaths, resetBackoffMs);
+      if (!reset.ok) {
+        const f = fail(i, `committed ${sha}, but refreshing the index failed: ${reset.stderr}`);
         f.failed!.committed = true;
+        f.failed!.resetPaths = resetPaths;
         return f;
       }
     } catch (e) {
