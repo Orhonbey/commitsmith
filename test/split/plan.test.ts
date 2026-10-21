@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'mocha';
 import type { ScopedFile } from '../../src/git/scope';
-import { PlanError, pairCompanions, parsePlan, toCommitGroups } from '../../src/split/plan';
+import { PlanError, applyEdit, locksOf, pairCompanions, parsePlan, toCommitGroups } from '../../src/split/plan';
 
 const sf = (path: string, o: Partial<ScopedFile> = {}): ScopedFile => ({ path, change: 'modified', isNew: false, ...o });
 const ai = (groups: { message: string; files: string[]; uncertain?: boolean }[]) =>
@@ -164,5 +164,82 @@ describe('split plan', () => {
     assert.equal(all.length, 3000);
     assert.equal(new Set(all).size, 3000);
     for (const g of out.groups) for (const p of g.files) if (p.endsWith('.meta')) assert.ok(g.files.includes(p.slice(0, -5)));
+  });
+
+  describe('applyEdit / locksOf', () => {
+    const grp = (id: string, files: string[], o: Partial<ReturnType<typeof parsePlan>['groups'][0]> = {}) => ({
+      id, message: 'm-' + id, files, reason: '', uncertain: false, checked: true, locked: false, ...o,
+    });
+    const base = () => ({
+      groups: [grp('g1', ['Foo.cs', 'Foo.cs.meta', 'a.txt']), grp('g2', ['b.txt']), grp('g3', ['c.txt'])],
+      unassigned: ['u.txt'],
+    });
+
+    it('move sets locked on both groups and carries .meta', () => {
+      const out = applyEdit(base(), { kind: 'move', file: 'Foo.cs', toGroupId: 'g2' });
+      assert.deepEqual(out.groups[0].files, ['a.txt']);
+      assert.deepEqual(out.groups[1].files, ['b.txt', 'Foo.cs', 'Foo.cs.meta']);
+      assert.deepEqual(out.groups.map((g) => g.locked), [true, true, false]);
+    });
+
+    it('moving a .meta carries its asset; to unassigned locks only the source', () => {
+      const out = applyEdit(base(), { kind: 'move', file: 'Foo.cs.meta', toGroupId: 'unassigned' });
+      assert.deepEqual(out.groups[0].files, ['a.txt']);
+      assert.deepEqual(out.unassigned, ['u.txt', 'Foo.cs.meta', 'Foo.cs']);
+      assert.deepEqual(out.groups.map((g) => g.locked), [true, false, false]);
+    });
+
+    it('moving an unassigned file into a group locks that group; unknown or same-place edits change nothing', () => {
+      const out = applyEdit(base(), { kind: 'move', file: 'u.txt', toGroupId: 'g3' });
+      assert.deepEqual(out.unassigned, []);
+      assert.deepEqual(out.groups.map((g) => g.locked), [false, false, true]);
+      assert.deepEqual(applyEdit(base(), { kind: 'move', file: 'nope', toGroupId: 'g3' }), base());
+      assert.deepEqual(applyEdit(base(), { kind: 'move', file: 'b.txt', toGroupId: 'zz' }), base());
+      assert.deepEqual(applyEdit(base(), { kind: 'move', file: 'b.txt', toGroupId: 'g2' }), base());
+    });
+
+    it('does not mutate its input', () => {
+      const p = base();
+      applyEdit(p, { kind: 'move', file: 'a.txt', toGroupId: 'g2' });
+      assert.deepEqual(p, base());
+    });
+
+    it('message edit locks group', () => {
+      const out = applyEdit(base(), { kind: 'message', groupId: 'g2', text: 'hello' });
+      assert.equal(out.groups[1].message, 'hello');
+      assert.deepEqual(out.groups.map((g) => g.locked), [false, true, false]);
+    });
+
+    it('toggle flips checked only', () => {
+      const out = applyEdit(base(), { kind: 'toggle', groupId: 'g1' });
+      assert.equal(out.groups[0].checked, false);
+      assert.deepEqual({ ...out.groups[0], checked: true }, base().groups[0]);
+      assert.equal(applyEdit(out, { kind: 'toggle', groupId: 'g1' }).groups[0].checked, true);
+    });
+
+    it('reorder swaps neighbours, no-op at edges', () => {
+      const down = applyEdit(base(), { kind: 'reorder', groupId: 'g1', delta: 1 });
+      assert.deepEqual(down.groups.map((g) => g.id), ['g2', 'g1', 'g3']);
+      const up = applyEdit(base(), { kind: 'reorder', groupId: 'g3', delta: -1 });
+      assert.deepEqual(up.groups.map((g) => g.id), ['g1', 'g3', 'g2']);
+      assert.deepEqual(applyEdit(base(), { kind: 'reorder', groupId: 'g1', delta: -1 }), base());
+      assert.deepEqual(applyEdit(base(), { kind: 'reorder', groupId: 'g3', delta: 1 }), base());
+    });
+
+    it('locksOf returns only locked groups', () => {
+      const p = applyEdit(applyEdit(base(), { kind: 'message', groupId: 'g2', text: 'mine' }), { kind: 'move', file: 'c.txt', toGroupId: 'g1' });
+      assert.deepEqual(locksOf(p), {
+        groups: [
+          { message: 'm-g1', files: ['Foo.cs', 'Foo.cs.meta', 'a.txt', 'c.txt'] },
+          { message: 'mine', files: ['b.txt'] },
+        ],
+      });
+      assert.deepEqual(locksOf(base()), { groups: [] });
+    });
+
+    it('locksOf skips a locked group that has become empty', () => {
+      const p = applyEdit(base(), { kind: 'move', file: 'c.txt', toGroupId: 'g1' });
+      assert.deepEqual(locksOf(p).groups.map((g) => g.message), ['m-g1']);
+    });
   });
 });

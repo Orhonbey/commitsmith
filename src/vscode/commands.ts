@@ -7,26 +7,34 @@ import { resolveScope, Scope } from '../git/scope';
 import { readStatus } from '../git/status';
 import { cleanMessage } from '../message/clean';
 import { buildMessagePrompt } from '../prompt/prompts';
+import { PlanError } from '../split/plan';
 import { readRepoContext } from '../prompt/repoContext';
 import { decidePush, readPushInfo, runPush } from '../push/push';
 import { GitRepository, getRepository } from './gitApi';
+import { SplitHost, SplitSession } from './splitSession';
+import { makePlan } from './splitPlanner';
 import { ToolPicker } from './statusBar';
 
-export class CommitSmithCommands implements vscode.Disposable {
+export class CommitSmithCommands implements vscode.Disposable, SplitHost {
   private readonly busy = new Set<string>();
   private readonly log = vscode.window.createOutputChannel('CommitSmith');
+  private session: SplitSession | undefined;
 
-  constructor(private readonly picker: ToolPicker) {}
+  constructor(
+    readonly picker: ToolPicker,
+    readonly extensionUri: vscode.Uri,
+  ) {}
 
   dispose(): void {
+    this.session?.dispose();
     this.log.dispose();
   }
 
-  private cfg() {
+  cfg() {
     return vscode.workspace.getConfiguration('commitsmith');
   }
 
-  private diffOptions(): DiffOptions {
+  diffOptions(): DiffOptions {
     const c = this.cfg();
     return {
       summaryOnlyExtensions: c.get<string[]>('summaryOnlyExtensions', DEFAULT_DIFF_OPTIONS.summaryOnlyExtensions),
@@ -39,17 +47,22 @@ export class CommitSmithCommands implements vscode.Disposable {
   private async withRepo(arg: unknown, fn: (root: string, repo: GitRepository) => Promise<void>): Promise<void> {
     const found = await getRepository(arg);
     if (!found) return;
-    if (this.busy.has(found.root)) {
+    await this.guard(found.root, () => fn(found.root, found.repo));
+  }
+
+  /** The per-repository busy guard: one AI/git job at a time. Errors are reported, not thrown. */
+  async guard(root: string, fn: () => Promise<void>): Promise<void> {
+    if (this.busy.has(root)) {
       void vscode.window.showInformationMessage(vscode.l10n.t('CommitSmith is already working on this repository'));
       return;
     }
-    this.busy.add(found.root);
+    this.busy.add(root);
     try {
-      await fn(found.root, found.repo);
+      await fn();
     } catch (e) {
       await this.report(e);
     } finally {
-      this.busy.delete(found.root);
+      this.busy.delete(root);
     }
   }
 
@@ -60,7 +73,7 @@ export class CommitSmithCommands implements vscode.Disposable {
     if ((await vscode.window.showErrorMessage(text, show)) === show) this.log.show(true);
   }
 
-  private async report(e: unknown): Promise<void> {
+  async report(e: unknown): Promise<void> {
     if (e instanceof AiError) {
       if (e.kind === 'cancelled') return;
       if (e.kind === 'notFound') return this.reportMissing(this.picker.current()?.tool.displayName ?? 'AI');
@@ -75,6 +88,9 @@ export class CommitSmithCommands implements vscode.Disposable {
       }
       return this.fail(text, detail);
     }
+    if (e instanceof PlanError) {
+      return this.fail(vscode.l10n.t('The AI could not produce a usable commit plan. The log has details'), e.message);
+    }
     if (e instanceof GitError) {
       return this.fail(vscode.l10n.t('A git command failed'), e.stderr.trim() || e.message);
     }
@@ -84,7 +100,7 @@ export class CommitSmithCommands implements vscode.Disposable {
     );
   }
 
-  private async reportMissing(name: string): Promise<void> {
+  async reportMissing(name: string): Promise<void> {
     const another = vscode.l10n.t('Pick another');
     if ((await vscode.window.showErrorMessage(vscode.l10n.t('{0} was not found', name), another)) === another) {
       await this.pickModel();
@@ -188,51 +204,70 @@ export class CommitSmithCommands implements vscode.Disposable {
     }
   }
 
-  smartSplit = async (_arg?: unknown): Promise<void> => {
-    void vscode.window.showInformationMessage(vscode.l10n.t('Smart split is coming next'));
+  /** Opens the plan tab (re-focuses it if open). The busy guard covers only the AI run, not the open tab. */
+  smartSplit = async (arg?: unknown): Promise<void> => {
+    if (this.session) {
+      this.session.reveal();
+      return;
+    }
+    await this.withRepo(arg, async (root, repo) => {
+      const first = await makePlan(this, root);
+      if (!first) return;
+      this.session = new SplitSession(this, root, repo, first, () => {
+        this.session = undefined;
+      });
+    });
   };
 
-  push = (arg?: unknown) =>
-    this.withRepo(arg, async (root, repo) => {
-      const info = await readPushInfo(root);
-      const d = decidePush(info);
-      if (d.kind === 'noRemote') {
-        void vscode.window.showErrorMessage(vscode.l10n.t('This repository has no remote to push to'));
-        return;
-      }
-      if (d.kind === 'nothing') {
-        void vscode.window.showInformationMessage(
-          info.branch
-            ? vscode.l10n.t('Nothing to push')
-            : info.unborn
-              ? vscode.l10n.t('Nothing to push yet. Make a first commit')
-              : vscode.l10n.t('Not on a branch'),
-        );
-        return;
-      }
-      const go = vscode.l10n.t('Push');
-      if (d.kind === 'setUpstream') {
-        const ok = await vscode.window.showInformationMessage(
-          vscode.l10n.t('Publish branch {0} to {1}?', info.branch, d.remote),
-          { modal: true },
-          go,
-        );
-        if (ok !== go) return;
-      } else if (d.confirmDefault) {
-        const ok = await vscode.window.showWarningMessage(
-          vscode.l10n.t('Push {0} commits to {1}?', info.ahead, info.upstream ?? info.branch),
-          { modal: true },
-          go,
-        );
-        if (ok !== go) return;
-      }
-      await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: vscode.l10n.t('Pushing...') },
-        () => runPush(root, d, info.branch),
+  /** Extension tests only: drives the open plan tab without a webview. */
+  async testPlanTab(arg: { action: 'state' } | { action: 'message'; message: unknown }): Promise<unknown> {
+    if (arg.action === 'message') await this.session?.handle(arg.message);
+    return this.session?.snapshot();
+  }
+
+  push = (arg?: unknown) => this.withRepo(arg, (root, repo) => this.pushFlow(root, repo));
+
+  /** Push with its confirmations; shared by the Push command and Smart split's "Push when done". */
+  async pushFlow(root: string, repo: GitRepository): Promise<void> {
+    const info = await readPushInfo(root);
+    const d = decidePush(info);
+    if (d.kind === 'noRemote') {
+      void vscode.window.showErrorMessage(vscode.l10n.t('This repository has no remote to push to'));
+      return;
+    }
+    if (d.kind === 'nothing') {
+      void vscode.window.showInformationMessage(
+        info.branch
+          ? vscode.l10n.t('Nothing to push')
+          : info.unborn
+            ? vscode.l10n.t('Nothing to push yet. Make a first commit')
+            : vscode.l10n.t('Not on a branch'),
       );
-      await repo.status();
-      void vscode.window.showInformationMessage(vscode.l10n.t('Pushed {0}', info.branch));
-    });
+      return;
+    }
+    const go = vscode.l10n.t('Push');
+    if (d.kind === 'setUpstream') {
+      const ok = await vscode.window.showInformationMessage(
+        vscode.l10n.t('Publish branch {0} to {1}?', info.branch, d.remote),
+        { modal: true },
+        go,
+      );
+      if (ok !== go) return;
+    } else if (d.confirmDefault) {
+      const ok = await vscode.window.showWarningMessage(
+        vscode.l10n.t('Push {0} commits to {1}?', info.ahead, info.upstream ?? info.branch),
+        { modal: true },
+        go,
+      );
+      if (ok !== go) return;
+    }
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: vscode.l10n.t('Pushing...') },
+      () => runPush(root, d, info.branch),
+    );
+    await repo.status();
+    void vscode.window.showInformationMessage(vscode.l10n.t('Pushed {0}', info.branch));
+  }
 
   pickModel = (): Promise<void> => this.picker.pick();
 }

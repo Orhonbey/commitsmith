@@ -1,0 +1,110 @@
+body {
+  margin: 0;
+  padding: 16px 20px 32px;
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}
+h1 { font-size: 1.15em; font-weight: 600; margin: 0 0 2px; }
+.sub { color: var(--vscode-descriptionForeground); margin-bottom: 14px; }
+.banner {
+  border: 1px solid var(--vscode-editorWarning-foreground);
+  color: var(--vscode-editorWarning-foreground);
+  border-radius: 4px;
+  padding: 6px 10px;
+  margin-bottom: 12px;
+}
+.error { color: var(--vscode-errorForeground); margin: 8px 0; white-space: pre-wrap; }
+.busy { color: var(--vscode-descriptionForeground); margin: 8px 0; }
+.hidden { display: none; }
+
+.card {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  margin-bottom: 10px;
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+}
+.card.off { opacity: 0.6; }
+.card.over { outline: 2px dashed var(--vscode-focusBorder); }
+.card-head { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--vscode-panel-border); }
+.num {
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  border-radius: 4px;
+  padding: 0 7px;
+  min-width: 1ch;
+  text-align: center;
+}
+.card-head input[type='text'] {
+  flex: 1;
+  min-width: 0;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, transparent);
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-editor-font-size);
+  padding: 4px 6px;
+  border-radius: 3px;
+}
+.card-head input[type='text']:focus { outline: 1px solid var(--vscode-focusBorder); }
+.move { display: flex; gap: 2px; }
+.move button {
+  background: transparent;
+  color: var(--vscode-foreground);
+  border: 0;
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 3px;
+}
+.move button:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground); }
+.move button:disabled { opacity: 0.35; cursor: default; }
+
+.card-body { padding: 6px 10px 8px 44px; line-height: 1.7; }
+.file {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  cursor: grab;
+  border-radius: 3px;
+  padding: 0 4px;
+  overflow-wrap: anywhere;
+}
+.file:hover { background: var(--vscode-list-hoverBackground); }
+.file.sub-file { margin-left: 18px; color: var(--vscode-descriptionForeground); }
+.tag {
+  font-size: 0.8em;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+.why { color: var(--vscode-descriptionForeground); font-style: italic; margin-top: 2px; }
+.warn { color: var(--vscode-editorWarning-foreground); margin-top: 2px; }
+.empty { color: var(--vscode-descriptionForeground); }
+.card.unassigned { border-style: dashed; }
+.card.unassigned .card-head { font-weight: 600; }
+.unassigned-note { color: var(--vscode-descriptionForeground); font-weight: normal; }
+
+.buttons { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+button.btn {
+  border: 1px solid transparent;
+  border-radius: 2px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+button.btn:hover:not(:disabled) { background: var(--vscode-button-secondaryHoverBackground); }
+button.btn.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+button.btn.primary:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
+button.btn:disabled { opacity: 0.5; cursor: default; }
+button.btn:focus-visible, .card input:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
+label.push { display: flex; gap: 6px; align-items: center; }
+.hint { color: var(--vscode-descriptionForeground); font-size: 0.9em; margin-top: 10px; }
+
+.result { border: 1px solid var(--vscode-panel-border); border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; }
+.result .sha { font-family: var(--vscode-editor-font-family); color: var(--vscode-textLink-foreground); margin-right: 8px; }
+.result.failed { border-color: var(--vscode-errorForeground); }

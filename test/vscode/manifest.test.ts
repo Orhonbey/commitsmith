@@ -48,6 +48,15 @@ describe('manifest', () => {
     assert.ok(found > 10);
   });
 
+  it('every string key the plan webview asks for is supplied (localized) by the extension', () => {
+    const js = readFileSync(join(ROOT, 'media/plan.js'), 'utf8');
+    const panel = readFileSync(join(ROOT, 'src/vscode/planPanel.ts'), 'utf8');
+    const supplied = new Set([...panel.matchAll(/^\s+(\w+): vscode\.l10n\.t\(/gm)].map((m) => m[1]));
+    const used = new Set([...js.matchAll(/\bS\('(\w+)'\)/g)].map((m) => m[1]));
+    assert.ok(used.size > 10);
+    for (const k of used) assert.ok(supplied.has(k), `media/plan.js uses S('${k}') but planPanel.ts does not supply it`);
+  });
+
   it('every contributed command is registered in src/extension.ts', () => {
     const ext = readFileSync(join(ROOT, 'src/extension.ts'), 'utf8');
     const ids = pkg.contributes.commands.map((c: any) => c.command);

@@ -161,3 +161,74 @@ export function toCommitGroups(plan: SplitPlan, scoped: ScopedFile[]): CommitGro
       return { message: g.message, paths };
     });
 }
+
+// ---- editing ---------------------------------------------------------------
+
+export type PlanEdit =
+  | { kind: 'move'; file: string; toGroupId: string }
+  | { kind: 'message'; groupId: string; text: string }
+  | { kind: 'toggle'; groupId: string }
+  | { kind: 'reorder'; groupId: string; delta: -1 | 1 };
+
+export const UNASSIGNED_ID = 'unassigned';
+
+function companionOf(file: string): string {
+  return file.endsWith('.meta') ? file.slice(0, -'.meta'.length) : `${file}.meta`;
+}
+
+/** Pure: returns a new plan. Moving a file or editing a message locks the touched groups. */
+export function applyEdit(plan: SplitPlan, edit: PlanEdit): SplitPlan {
+  const groups = plan.groups.map((g) => ({ ...g, files: [...g.files] }));
+  let unassigned = [...plan.unassigned];
+  const index = groups.findIndex((g) => 'groupId' in edit && g.id === edit.groupId);
+
+  switch (edit.kind) {
+    case 'message':
+      if (index < 0) return plan;
+      groups[index].message = edit.text;
+      groups[index].locked = true;
+      break;
+    case 'toggle':
+      if (index < 0) return plan;
+      groups[index].checked = !groups[index].checked;
+      break;
+    case 'reorder': {
+      const to = index + edit.delta;
+      if (index < 0 || to < 0 || to >= groups.length) return plan;
+      [groups[index], groups[to]] = [groups[to], groups[index]];
+      break;
+    }
+    case 'move': {
+      const dest = edit.toGroupId === UNASSIGNED_ID ? -1 : groups.findIndex((g) => g.id === edit.toGroupId);
+      if (dest < 0 && edit.toGroupId !== UNASSIGNED_ID) return plan;
+      // -1 = unassigned, undefined = not in the plan
+      const where = (f: string): number | undefined =>
+        unassigned.includes(f) ? -1 : groups.some((g) => g.files.includes(f)) ? groups.findIndex((g) => g.files.includes(f)) : undefined;
+      const at = where(edit.file);
+      if (at === undefined || at === dest) return plan;
+      for (const f of [edit.file, companionOf(edit.file)]) {
+        const from = where(f);
+        if (from === undefined || from === dest) continue;
+        if (from === -1) unassigned = unassigned.filter((p) => p !== f);
+        else {
+          groups[from].files = groups[from].files.filter((p) => p !== f);
+          groups[from].locked = true;
+        }
+        if (dest === -1) unassigned.push(f);
+        else {
+          groups[dest].files.push(f);
+          groups[dest].locked = true;
+        }
+      }
+      break;
+    }
+  }
+  return { groups, unassigned };
+}
+
+/** The groups the user touched; Regroup must keep them as they are. */
+export function locksOf(plan: SplitPlan): PlanLocks {
+  return {
+    groups: plan.groups.filter((g) => g.locked && g.files.length > 0).map((g) => ({ message: g.message, files: [...g.files] })),
+  };
+}
