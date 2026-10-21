@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { copyFile, rm } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { GitError, pathspecInput, runGit } from './gitRunner';
 import type { Scope } from './scope';
 
@@ -20,6 +20,29 @@ const IN_PROGRESS = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-me
 function describeError(e: unknown): string {
   if (e instanceof GitError) return (e.stderr.trim() || e.message).trim();
   return e instanceof Error ? e.message : String(e);
+}
+
+/**
+ * Fills the temporary index with HEAD. It starts as a copy of the real index so `git read-tree -m`
+ * keeps the stat data of every entry that matches HEAD; otherwise `git commit` would re-hash every
+ * tracked file. Falls back to a plain `read-tree HEAD` (e.g. no real index yet, or unmerged entries).
+ * Exported for tests.
+ */
+export async function seedTempIndex(root: string, tmp: string, hasHead: boolean): Promise<void> {
+  const env = { GIT_INDEX_FILE: tmp };
+  if (!hasHead) {
+    await runGit(root, ['read-tree', '--empty'], { env });
+    return;
+  }
+  try {
+    const real = (await runGit(root, ['rev-parse', '--git-path', 'index'], { env: REAL_INDEX_ENV })).stdout.trim();
+    await copyFile(resolve(root, real), tmp);
+    await runGit(root, ['read-tree', '-m', 'HEAD'], { env });
+    return;
+  } catch {
+    await rm(tmp, { force: true }).catch(() => {});
+  }
+  await runGit(root, ['read-tree', 'HEAD'], { env });
 }
 
 /**
@@ -59,7 +82,7 @@ export async function commitGroups(
     const pathsInput = pathspecInput(group.paths);
     try {
       const hasHead = (await runGit(root, ['rev-parse', '--verify', '-q', 'HEAD^{commit}'], { env: REAL_INDEX_ENV, allowFail: true })).code === 0;
-      await runGit(root, hasHead ? ['read-tree', 'HEAD'] : ['read-tree', '--empty'], { env });
+      await seedTempIndex(root, tmp, hasHead);
 
       if (kind === 'staged') {
         const wanted = new Set(group.paths);

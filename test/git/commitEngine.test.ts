@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { chmodSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, it } from 'mocha';
-import { commitGroups } from '../../src/git/commitEngine';
+import { commitGroups, seedTempIndex } from '../../src/git/commitEngine';
+import { runGit } from '../../src/git/gitRunner';
 import { createTempRepo, type TempRepo } from '../helpers/tempRepo';
 
 describe('commitEngine', () => {
@@ -229,5 +230,71 @@ describe('commitEngine', () => {
     assert.equal(res.failed, undefined);
     assert.equal((await repo.git('status', '--porcelain')).trim(), '');
     assert.ok(existsSync(join(repo.root, 'dir/file-599.txt')));
+  });
+  describe('temporary index keeps stat data (C1)', () => {
+    const ls = async (index: string) =>
+      (await runGit(repo.root, ['ls-files', '--debug'], { env: { GIT_INDEX_FILE: index } })).stdout;
+
+    it('seeds the temp index from the real one: equal to HEAD, with stat data', async () => {
+      repo.write('a.txt', 'staged\n');
+      await repo.git('add', 'a.txt'); // a staged change in the real index must not leak into the temp index
+      const tmp = join(repo.root, '.git', 'seed-test-index');
+      await seedTempIndex(repo.root, tmp, true);
+      const cached = await runGit(repo.root, ['diff', '--cached', '--name-only', 'HEAD'], { env: { GIT_INDEX_FILE: tmp } });
+      assert.equal(cached.stdout.trim(), '', 'temp index equals HEAD');
+      const mtimes = [...(await ls(tmp)).matchAll(/mtime: (\d+):\d+/g)].map((m) => Number(m[1]));
+      assert.equal(mtimes.length, 3);
+      // b.txt and c.txt match HEAD: their stat data is kept. a.txt differs from HEAD, so it has none.
+      assert.equal(mtimes.filter((t) => t > 0).length, 2, await ls(tmp));
+      rmSync(tmp, { force: true });
+    });
+
+    it('falls back to a plain read-tree when the real index has unmerged entries', async () => {
+      const blob = (await repo.git('rev-parse', 'HEAD:a.txt')).trim();
+      const stages = [1, 2, 3].map((n) => `100644 ${blob} ${n}\ta.txt\0`).join('');
+      await repo.git('update-index', '--force-remove', 'a.txt');
+      await runGit(repo.root, ['update-index', '-z', '--index-info'], { input: stages });
+      repo.write('b.txt', 'b2\n');
+      const res = await commitGroups(repo.root, 'all', [{ message: 'm', paths: ['b.txt'] }]);
+      assert.equal(res.failed, undefined, res.failed?.error);
+      assert.equal((await repo.git('show', 'HEAD:b.txt')).trim(), 'b2');
+      assert.deepEqual((await repo.git('ls-tree', '-r', '--name-only', 'HEAD')).trim().split('\n'), ['a.txt', 'b.txt', 'c.txt']);
+      assert.ok((await repo.git('ls-files', '-u')).includes('a.txt'), 'the real index keeps its unmerged entries');
+    });
+
+    it('commit time stays close to a plain commit on a few thousand files', async function () {
+      this.timeout(180000);
+      const big = await createTempRepo();
+      try {
+        // 2 000 tracked files, 384 MB: re-hashing them all costs far more than a commit's own work.
+        for (let i = 0; i < 2000; i++) big.write(`d${i % 40}/f${i}.bin`, Buffer.alloc(196608, `file ${i} `));
+        big.write('x.txt', 'x\n');
+        await big.git('add', '-A');
+        await big.git('commit', '-q', '-m', 'init');
+        const best = async (fn: (k: number) => Promise<void>) => {
+          let min = Infinity;
+          for (let k = 0; k < 3; k++) {
+            const t = performance.now();
+            await fn(k);
+            min = Math.min(min, performance.now() - t);
+          }
+          return min;
+        };
+        const plain = await best(async (k) => {
+          big.write('x.txt', `plain ${k}\n`);
+          await big.git('add', 'x.txt');
+          await big.git('commit', '-q', '-m', 'plain');
+        });
+        const engine = await best(async (k) => {
+          big.write('x.txt', `engine ${k}\n`);
+          const r = await commitGroups(big.root, 'all', [{ message: 'engine', paths: ['x.txt'] }]);
+          assert.equal(r.failed, undefined, r.failed?.error);
+        });
+        // A few extra git processes are fine; re-hashing the tree (about 10x here) is not.
+        assert.ok(engine < plain * 6, `engine ${engine.toFixed(0)} ms vs plain commit ${plain.toFixed(0)} ms`);
+      } finally {
+        await big.cleanup();
+      }
+    });
   });
 });
