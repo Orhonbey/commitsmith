@@ -74,4 +74,40 @@ describe('prompts', () => {
       await repo.cleanup();
     }
   });
+  describe('file list caps (M5)', () => {
+    const fileLines = (p: string) => p.split('\n').filter((l) => / \| \d+ bytes \| /.test(l) || /files, summary-only/.test(l) || /more files/.test(l));
+
+    it('message prompt lists at most 400 files plus a "+N more files" line, patched files first', () => {
+      const diffs = Array.from({ length: 450 }, (_, i) => fd({ path: `Assets/m${i}.meta`, summarized: true }));
+      diffs.push(fd({ path: 'src/Code.cs', patch: 'CODEPATCH' }));
+      const p = buildMessagePrompt(ctx, diffs, 'English');
+      const lines = fileLines(p);
+      assert.equal(lines.length, 401);
+      assert.ok(lines[0].includes('src/Code.cs'), lines[0]);
+      assert.ok(p.includes('+51 more files'), p.slice(-400));
+      assert.ok(p.includes('CODEPATCH'));
+      // Small change sets are untouched.
+      assert.ok(!buildMessagePrompt(ctx, diffs.slice(0, 10), 'English').includes('more files'));
+    });
+
+    it('split prompt collapses summary-only files by directory and extension above 400 files', () => {
+      const diffs = Array.from({ length: 1240 }, (_, i) => fd({ path: `Assets/Art/set${i}/tex${i}.png.meta`, summarized: true }));
+      for (let i = 0; i < 5; i++) diffs.push(fd({ path: `Assets/Scripts/S${i}.cs`, patch: `PATCH${i}` }));
+      const p = buildSplitPrompt(ctx, diffs, 'English');
+      const lines = fileLines(p);
+      assert.ok(lines.length <= 400, String(lines.length));
+      assert.ok(p.includes('Assets/Art/**/*.meta — 1240 files, summary-only'), p.slice(0, 3000));
+      for (let i = 0; i < 5; i++) assert.ok(p.includes(`Assets/Scripts/S${i}.cs`) && p.includes(`PATCH${i}`));
+      assert.ok(!p.includes('set17/tex17.png.meta'));
+      assert.match(p, /unassigned/);
+      assert.match(p, /collapsed/i);
+    });
+
+    it('split prompt keeps the finest grouping that fits', () => {
+      const diffs = Array.from({ length: 600 }, (_, i) => fd({ path: `Assets/Art/d${i % 3}/f${i}.asset`, summarized: true }));
+      const lines = fileLines(buildSplitPrompt(ctx, diffs, 'English'));
+      assert.deepEqual(lines.map((l) => l.split(' — ')[0]).sort(), ['Assets/Art/d0/**/*.asset', 'Assets/Art/d1/**/*.asset', 'Assets/Art/d2/**/*.asset']);
+      assert.ok(!buildSplitPrompt(ctx, diffs.slice(0, 400), 'English').includes('collapsed'));
+    });
+  });
 });

@@ -69,8 +69,11 @@ function describeFile(d: FileDiff): string {
   return bits.join(' | ');
 }
 
-function fileBlock(diffs: FileDiff[]): string {
-  const list = diffs.map(describeFile).join('\n');
+/** Above this many files the prompt's file list is capped (message) or collapsed (split). */
+export const MAX_LISTED_FILES = 400;
+
+function fileBlock(diffs: FileDiff[], extraLines: string[] = []): string {
+  const list = [...diffs.map(describeFile), ...extraLines].join('\n');
   const patches = diffs
     .filter((d) => !d.summarized && d.patch)
     .map((d) => d.patch!)
@@ -78,12 +81,56 @@ function fileBlock(diffs: FileDiff[]): string {
   return list + (patches ? `\n\nDiffs:\n${patches}` : '');
 }
 
+/** Message prompt: at most MAX_LISTED_FILES lines, files with a patch first, then "+N more files". */
+function messageFileBlock(diffs: FileDiff[]): string {
+  if (diffs.length <= MAX_LISTED_FILES) return fileBlock(diffs);
+  const ordered = [...diffs.filter((d) => !d.summarized), ...diffs.filter((d) => d.summarized)];
+  const shown = ordered.slice(0, MAX_LISTED_FILES);
+  return fileBlock(shown, [`+${ordered.length - shown.length} more files (summary only, not listed)`]);
+}
+
+const dirOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')).split('/') : []);
+const extOf = (p: string) => {
+  const name = p.slice(p.lastIndexOf('/') + 1);
+  const dot = name.lastIndexOf('.');
+  return dot > 0 ? name.slice(dot) : '';
+};
+
+/**
+ * Split prompt above MAX_LISTED_FILES files: summary-only files are collapsed into counted
+ * "dir/**\/*.ext" lines, using the deepest directory level that fits the budget. Files with a
+ * patch stay listed one by one. Returns undefined when nothing needs collapsing.
+ */
+function collapsedFileBlock(diffs: FileDiff[]): string | undefined {
+  if (diffs.length <= MAX_LISTED_FILES) return undefined;
+  const single = diffs.filter((d) => !d.summarized);
+  const summary = diffs.filter((d) => d.summarized);
+  const budget = Math.max(1, MAX_LISTED_FILES - single.length);
+  const maxDepth = Math.max(0, ...summary.map((d) => dirOf(d.path).length));
+  const keyAt = (d: FileDiff, depth: number) => `${dirOf(d.path).slice(0, depth).join('/')}\0${extOf(d.path)}`;
+  let depth = maxDepth;
+  while (depth > 0 && new Set(summary.map((d) => keyAt(d, depth))).size > budget) depth--;
+  const buckets = new Map<string, FileDiff[]>();
+  for (const d of summary) buckets.set(keyAt(d, depth), [...(buckets.get(keyAt(d, depth)) ?? []), d]);
+  const lines: string[] = [];
+  const listed = [...single];
+  for (const [key, files] of buckets) {
+    if (files.length === 1) {
+      listed.push(files[0]);
+      continue;
+    }
+    const [dir, ext] = key.split('\0');
+    lines.push(`${dir ? dir + '/' : ''}**/*${ext} — ${files.length} files, summary-only (collapsed)`);
+  }
+  return fileBlock(listed, lines);
+}
+
 export function buildMessagePrompt(ctx: RepoContext, diffs: FileDiff[], language: string): string {
   return [
     'You write git commit messages. Write one commit message for the changes below.',
     contextSection(ctx, language),
     'Files marked summarized are described by path, status and size only; do not guess their contents.',
-    `<changes>\nChanged files:\n${fileBlock(diffs)}\n</changes>`,
+    `<changes>\nChanged files:\n${messageFileBlock(diffs)}\n</changes>`,
     MESSAGE_FORMAT,
   ].join('\n\n');
 }
@@ -99,6 +146,7 @@ export function buildSplitPrompt(ctx: RepoContext, diffs: FileDiff[], language: 
           .join('\n') +
         '\n\n'
       : '';
+  const collapsed = collapsedFileBlock(free);
   return [
     'You split a set of working-tree changes into separate, logically coherent git commits and write a message for each.',
     contextSection(ctx, language),
@@ -110,8 +158,14 @@ export function buildSplitPrompt(ctx: RepoContext, diffs: FileDiff[], language: 
       '- Set "uncertain": true on a group whose changes look accidental (editor or settings noise).',
       '- Files marked summarized are described by path, status and size only; do not guess their contents.',
       '- "reason" is one short sentence on why the files belong together.',
+      ...(collapsed
+        ? [
+            '- Lines marked (collapsed) stand for many summary-only files that are not listed one by one. ' +
+              'Do not put them or their pattern in any group or in "unassigned"; every file you do not list stays unassigned for the user to place.',
+          ]
+        : []),
     ].join('\n'),
-    `<changes>\n${lockedBlock}Files you may group:\n${fileBlock(free)}\n</changes>`,
+    `<changes>\n${lockedBlock}Files you may group:\n${collapsed ?? fileBlock(free)}\n</changes>`,
     SPLIT_FORMAT,
   ].join('\n\n');
 }
