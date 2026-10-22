@@ -2,9 +2,36 @@
 
 Write git commit messages with the AI command-line tools you already have installed (**Claude Code** or **Codex**), commit, split a messy working tree into several approved commits, and push, all from VS Code's Source Control panel. No API key is needed: CommitSmith uses the CLI's own login.
 
-**Status:** v0.3.0, not yet on the Marketplace. Build it from source (see Development).
+**Status:** v0.3.0, not yet on the Marketplace. Install the `.vsix` from [Releases](https://github.com/Orhonbey/commitsmith/releases) (see Install).
 
-<!-- Screenshots: add media/screenshots/*.png here before publishing. -->
+![CommitSmith panel next to a diff: AI picker, message box, the four actions and the Changes tree](docs/images/panel.png)
+
+## Install
+
+1. Install and sign in to [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [Codex](https://github.com/openai/codex) in a terminal. CommitSmith uses that login; it never asks for an API key.
+2. Download `commitsmith-<version>.vsix` from the [latest release](https://github.com/Orhonbey/commitsmith/releases/latest).
+3. Install it: `code --install-extension commitsmith-0.3.0.vsix`, or in VS Code: Extensions view → `…` → **Install from VSIX…**
+4. Open a git repository and click the CommitSmith icon in the Activity Bar.
+
+## Tour
+
+**Write message.** The AI reads your changes (staged ones, or all of them when nothing is staged) and fills the commit message box. Nothing is staged or committed.
+
+![A commit message written by Claude Code in the CommitSmith panel](docs/images/write-message.png)
+
+**Smart split.** One messy working tree becomes several focused commits. The plan opens in a tab: drag files between commits, edit the messages, change the order, regroup, then commit the ticked ones. Files in the Changes tree show which commit they are planned for.
+
+![Smart split plan: Claude Code proposes three commits for six changed files](docs/images/smart-split.png)
+
+![After approving: three commits created, Push shows 3 waiting, Recent lists them](docs/images/split-done.png)
+
+**Source Control too.** The same four actions sit in the Source Control title bar, and both commit message boxes stay in sync.
+
+![The four CommitSmith buttons in the Source Control title bar](docs/images/source-control.png)
+
+**Choose the AI and model.** Claude Code and Codex models in one list; the status bar shows the current one.
+
+![Model picker listing Claude Code and Codex models](docs/images/model-picker.png)
 
 ## Actions
 
@@ -81,6 +108,8 @@ Display language follows VS Code. To add one (for example German, `de`):
 
 Turkish (`tr`) is included as an example.
 
+The screenshots in `docs/images/` were taken in a throwaway demo repository with the real extension and Claude Code (Sonnet).
+
 ## Development
 
 ```
@@ -88,7 +117,7 @@ npm install
 npm test               # unit tests (mocha)
 npm run test:vscode    # smoke test inside a real VS Code
 npm run build          # bundle to dist/
-npm run package        # builds commitsmith-0.1.0.vsix
+npm run package        # builds commitsmith-<version>.vsix
 ```
 
 Press **F5** to start an Extension Development Host. `scripts/make-icon.mjs` regenerates `media/icon.png`.
@@ -107,6 +136,8 @@ Manual check (in an Extension Development Host, on a throwaway git repo):
 ## Türkçe özet
 
 CommitSmith, bilgisayarında kurulu Claude Code veya Codex komut satırı araçlarıyla commit mesajı yazar. API anahtarı gerekmez; aracın kendi girişi kullanılır. Kaynak Denetimi panelindeki dört düğme: mesaj yaz, mesaj yaz ve commit et, akıllı bölme (değişiklikleri onayına sunulan birkaç commit'e ayırır) ve push. Dosya hazırlandıysa (staged) yalnızca onlar, değilse tüm değişiklikler kullanılır. Yeni dosyalar `commitsmith.includeUntracked` açık değilse atlanır; akıllı bölme her zaman dahil eder. Varsayılan dala push etmeden önce sorulur. Fark (diff), seçtiğin aracın sağlayıcısına kendi hesabınla gönderilir; ikili ve çok büyük dosyaların yalnızca adı ve boyutu gider. Güvenilmeyen çalışma alanlarında devre dışıdır. Türkçe arayüz hazırdır. Etkinlik Çubuğundaki CommitSmith simgesi, Kaynak Denetimi görünümüne benzeyen bir panel açar: commit mesajı kutusu, dört eylem, değişen dosyalar (Stage'dekiler, Değişenler, Yeni dosyalar; dosyaya tıklayınca fark açılır, satırda stage / stage'den çıkar / at düğmeleri) ve son işlemler. "At" her zaman önce sorar ve yeni dosyalarda sunulmaz.
+
+Kurulum: [Releases](https://github.com/Orhonbey/commitsmith/releases/latest) sayfasından `.vsix` dosyasını indir, `code --install-extension commitsmith-0.3.0.vsix` ile kur. Bilgisayarda Claude Code veya Codex kurulu ve giriş yapılmış olmalı.
 
 ## License
 

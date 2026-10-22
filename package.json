@@ -5,6 +5,14 @@
   "version": "0.3.0",
   "publisher": "commitsmith",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Orhonbey/commitsmith.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Orhonbey/commitsmith/issues"
+  },
+  "homepage": "https://github.com/Orhonbey/commitsmith#readme",
   "icon": "media/icon.png",
   "engines": {
     "vscode": "^1.95.0"
